@@ -1,0 +1,6 @@
+flask
+flask-socketio
+eventlet
+requests
+beautifulsoup4
+lxml

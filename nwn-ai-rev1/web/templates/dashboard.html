@@ -1,0 +1,1203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NWN Combat AI</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+<style>
+  :root {
+    --bg:        #0d0f14;
+    --panel:     #151820;
+    --border:    #2a2f3d;
+    --accent:    #4a9eff;
+    --accent2:   #ff6b35;
+    --green:     #3ddc84;
+    --red:       #ff4757;
+    --yellow:    #ffd32a;
+    --purple:    #a29bfe;
+    --text:      #e0e4f0;
+    --muted:     #7a8299;
+    --tab-h:     42px;
+    --base-font: 13px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: 'Consolas', monospace;
+         font-size: var(--base-font); height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+
+  /* TOP BAR */
+  #topbar { background: var(--panel); border-bottom: 1px solid var(--border); padding: 5px 12px;
+            display: flex; align-items: center; gap: 10px; flex-shrink: 0; flex-wrap: wrap; min-height: 44px; }
+  #topbar h1 { color: var(--accent); font-size: 1.1em; letter-spacing: 2px; text-transform: uppercase; white-space: nowrap; }
+  .stat-pill { background: var(--bg); border: 1px solid var(--border); border-radius: 4px; padding: 2px 8px; white-space: nowrap; }
+  .stat-pill .label { color: var(--muted); font-size: 0.77em; display: block; }
+  .stat-pill .val { font-weight: bold; font-size: 0.92em; }
+  .pill-warn { border-color: var(--yellow) !important; }
+  .pill-dead { border-color: var(--red) !important; }
+  #indicator { display: flex; align-items: center; gap: 6px; font-size: 0.85em; margin-left: auto; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--red); flex-shrink:0; }
+  .dot.live { background: var(--green); animation: pulse 1.5s infinite; }
+  @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:.4; } }
+  .scope-btn { background: none; border: 1px solid var(--border); color: var(--muted);
+               padding: 2px 9px; border-radius: 3px; font-family: inherit; font-size: 0.85em; cursor: pointer; }
+  .scope-btn.active { border-color: var(--accent); color: var(--accent); }
+  #settings-btn { background: none; border: 1px solid var(--border); color: var(--muted);
+                  padding: 2px 8px; border-radius: 3px; font-family: inherit; font-size: 0.92em; cursor: pointer; }
+  #settings-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* DEATH TIMER PILLS */
+  #death-timer-bar { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  .death-pill { display: flex; gap: 5px; align-items: center; background: var(--bg);
+                border: 1px solid var(--red); border-radius: 4px; padding: 2px 8px; font-size: 0.85em; }
+  .dp-name { color: var(--text); }
+  .dp-timer { font-weight: bold; min-width: 40px; font-variant-numeric: tabular-nums; }
+
+  /* SETTINGS PANEL */
+  #settings-panel { display: none; position: fixed; top: 50px; right: 12px; z-index: 1000;
+                    background: var(--panel); border: 1px solid var(--border); border-radius: 6px;
+                    padding: 14px 18px; min-width: 220px; box-shadow: 0 4px 20px rgba(0,0,0,.6); }
+  #settings-panel.open { display: block; }
+  #settings-panel h4 { color: var(--muted); font-size: 0.77em; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 12px; }
+  .setting-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; font-size: 0.92em; }
+  .setting-row label { color: var(--muted); }
+  .setting-row input[type=range] { flex: 1; accent-color: var(--accent); }
+  #font-size-val { color: var(--accent); min-width: 34px; text-align: right; }
+
+  /* TABS */
+  #tabs { display: flex; background: var(--panel); border-bottom: 2px solid var(--border); flex-shrink: 0; overflow-x: auto; }
+  .tab { padding: 0 18px; height: var(--tab-h); line-height: var(--tab-h); cursor: pointer; color: var(--muted);
+         border-bottom: 2px solid transparent; margin-bottom: -2px; transition: color .15s; user-select: none;
+         white-space: nowrap; font-size: 0.92em; }
+  .tab:hover { color: var(--text); }
+  .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .tab.alert { color: var(--red) !important; }
+
+  /* CONTENT */
+  #content { flex: 1; overflow: hidden; display: flex; flex-direction: column; }
+  .tab-panel { display: none; flex: 1; overflow: auto; padding: 10px; gap: 10px; }
+  .tab-panel.active { display: flex; flex-wrap: wrap; align-content: flex-start; }
+
+  /* CARDS */
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 10px; }
+  .card h3 { color: var(--muted); font-size: 0.77em; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
+  .card.w-full  { width: 100%; }
+  .card.w-half  { width: calc(50% - 5px); }
+  .card.w-third { width: calc(33.3% - 7px); }
+  .card.w-2-3   { width: calc(66.6% - 4px); }
+  .card.w-3-5   { width: calc(60% - 5px); }
+  .card.w-2-5   { width: calc(40% - 5px); }
+
+  /* LIVE FEED */
+  #feed { font-size: 0.92em; max-height: 360px; overflow-y: auto; display: flex; flex-direction: column-reverse; }
+  .feed-row { padding: 2px 4px; border-bottom: 1px solid #1a1d26; display: flex; gap: 8px; }
+  .feed-row:hover { background: #1a1d26; }
+  .feed-ts   { color: var(--muted); flex-shrink: 0; width: 70px; font-size: 0.85em; }
+  .feed-type { flex-shrink: 0; width: 55px; text-align: center; border-radius: 3px; padding: 0 4px; font-size: 0.77em; font-weight: bold; }
+  .t-attack  { background: #1a2a3a; color: var(--accent); }
+  .t-damage  { background: #2a1a1a; color: var(--red); }
+  .t-kill    { background: #1a2a1a; color: var(--green); }
+  .t-save    { background: #2a2a1a; color: var(--yellow); }
+  .t-spell   { background: #221a2a; color: var(--purple); }
+  .t-resurrect { background: #1a2a2a; color: var(--green); }
+  .feed-text { color: var(--text); word-break: break-word; }
+
+  /* DEATH TIMERS PANEL */
+  #death-panel { font-size: 0.92em; }
+  .dp-row { display: flex; align-items: center; justify-content: space-between; padding: 5px 8px;
+            border-radius: 4px; margin-bottom: 4px; border-left: 3px solid var(--red); background: #1a0a0a; }
+  .dp-row .dp-nm { font-weight: bold; color: var(--text); }
+  .dp-row .dp-kt { color: var(--muted); font-size: 0.85em; }
+  .dp-row .dp-cd { font-weight: bold; font-variant-numeric: tabular-nums; font-size: 1.08em; }
+  .dp-limbo { border-color: var(--yellow); background: #1a1a0a; }
+  .dp-limbo .dp-cd { color: var(--yellow); }
+
+  /* SAVE FAILURES ROLLING */
+  .sfail-row { display: flex; gap: 6px; align-items: center; padding: 2px 4px; border-bottom: 1px solid #1a1d26; font-size: 0.85em; }
+  .sfail-row:hover { background: #1a1d26; }
+  .sfail-ts  { color: var(--muted); flex-shrink: 0; width: 60px; }
+  .sfail-who { color: var(--accent); flex-shrink: 0; width: 90px; overflow: hidden; text-overflow: ellipsis; }
+  .sfail-save { color: var(--yellow); flex-shrink: 0; width: 55px; }
+  .sfail-dc  { color: var(--red); flex-shrink: 0; width: 45px; }
+  .sfail-src { color: var(--muted); overflow: hidden; text-overflow: ellipsis; }
+
+  /* TABLES */
+  table { width: 100%; border-collapse: collapse; }
+  th { color: var(--muted); text-align: left; padding: 3px 5px; border-bottom: 1px solid var(--border);
+       font-size: 0.77em; font-weight: normal; white-space: nowrap; }
+  th.sortable { cursor: pointer; user-select: none; }
+  th.sortable:hover { color: var(--accent); }
+  td { padding: 3px 5px; border-bottom: 1px solid #1a1d26; font-size: 0.92em; white-space: nowrap; }
+  tr:hover td { background: #1a1d26; }
+  .num { text-align: right; font-variant-numeric: tabular-nums; }
+  .bar-cell { position: relative; min-width: 100px; }
+  .bar-fill { position: absolute; left: 0; top: 2px; bottom: 2px; background: #1a2a3a; border-radius: 2px; z-index: 0; }
+  .bar-text { position: relative; z-index: 1; }
+  .hit   { color: var(--green); }
+  .miss  { color: var(--muted); }
+  .crit  { color: var(--yellow); }
+  .dead  { color: var(--red); }
+  .warn  { color: var(--yellow); }
+  .good  { color: var(--green); }
+  .tbl-scroll { overflow-x: auto; max-height: 320px; overflow-y: auto; }
+
+  /* DAMAGE BREAKDOWN (wide scrollable table) */
+  .dmg-type-val { text-align: right; min-width: 44px; font-variant-numeric: tabular-nums; }
+  .dmg-type-val.nz { color: var(--accent2); }
+
+  /* BESTIARY */
+  #search-input, #browse-filter { width: 100%; background: var(--bg); border: 1px solid var(--border);
+    color: var(--text); padding: 5px 9px; border-radius: 4px; font-family: inherit;
+    font-size: 1em; margin-bottom: 6px; }
+  #search-input:focus, #browse-filter:focus { outline: none; border-color: var(--accent); }
+  #mob-results { font-size: 0.92em; }
+  .mob-entry { border: 1px solid var(--border); border-radius: 4px; padding: 9px; margin-bottom: 7px; }
+  .mob-name { color: var(--accent); font-size: 1.08em; font-weight: bold; margin-bottom: 5px; }
+  .mob-stats { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 5px; }
+  .mob-stat .k { color: var(--muted); font-size: 0.77em; }
+  .mob-stat .v { color: var(--text); }
+  .imm-bar { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; }
+  .imm-chip { padding: 1px 5px; border-radius: 3px; font-size: 0.77em; }
+  .imm-100 { background: #2a0a0a; color: var(--red); border: 1px solid var(--red); }
+  .imm-hi  { background: #2a1a0a; color: var(--yellow); border: 1px solid var(--yellow); }
+  .imm-lo  { background: #0a1a0a; color: var(--green); border: 1px solid var(--green); }
+  .best-dmg { color: var(--green); font-weight: bold; }
+  .immunity-list { color: var(--red); font-size: 0.85em; margin-top: 3px; }
+
+  /* PC STATUS */
+  .imm-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 5px; margin-top: 7px; }
+  .imm-cell { background: var(--bg); border: 1px solid var(--border); border-radius: 4px; padding: 5px 7px; }
+  .imm-cell .dtype { color: var(--muted); font-size: 0.77em; text-transform: uppercase; }
+  .imm-cell .ipct { font-size: 1.23em; font-weight: bold; }
+  .imm-cell .idr  { color: var(--muted); font-size: 0.85em; }
+  .imm-danger { border-color: var(--red) !important; }
+  .imm-warn   { border-color: var(--yellow) !important; }
+  .imm-good   { border-color: var(--green) !important; }
+  .alert-row  { padding: 3px 7px; border-radius: 4px; margin-bottom: 4px; font-size: 0.92em; }
+  .alert-CRITICAL { background: #2a0a0a; border-left: 3px solid var(--red); }
+  .alert-WARNING  { background: #2a2a0a; border-left: 3px solid var(--yellow); }
+  .pc-chip { display: inline-block; background: #1a2a3a; border: 1px solid var(--border); border-radius: 10px; padding: 1px 7px; font-size: 0.85em; margin: 2px; color: var(--accent); }
+
+  /* KILL DETAIL */
+  .kill-row { padding: 4px 8px; border-radius: 4px; border-left: 3px solid var(--red); background: #1a0a0a; margin-bottom: 4px; font-size: 0.92em; }
+  .kill-row .kts { color: var(--muted); font-size: 0.77em; }
+  .kill-row .kvic { color: var(--red); font-weight: bold; }
+  .kill-row .kkil { color: var(--yellow); }
+  .kill-row .khow { color: var(--muted); font-size: 0.85em; }
+
+  /* SPELLS */
+  .song-chip { display: inline-block; background: #1a1a2a; border: 1px solid var(--purple); border-radius: 3px; padding: 1px 6px; font-size: 0.77em; color: var(--purple); margin-left: 4px; }
+
+  /* AI QUERY */
+  #question-input { background: var(--bg); border: 1px solid var(--border); color: var(--text);
+    padding: 9px 13px; border-radius: 4px; font-family: inherit; font-size: 1em;
+    width: 100%; resize: none; height: 58px; }
+  #question-input:focus { outline: none; border-color: var(--accent); }
+  .query-row { display: flex; gap: 8px; align-items: center; }
+  .btn { background: var(--accent); color: #000; border: none; padding: 7px 16px; border-radius: 4px;
+         cursor: pointer; font-family: inherit; font-size: 1em; font-weight: bold; }
+  .btn:hover { filter: brightness(1.15); }
+  .btn-sec { background: var(--panel); color: var(--text); border: 1px solid var(--border); }
+  #ollama-status { font-size: 0.85em; color: var(--muted); }
+  #ai-answer { background: var(--bg); border: 1px solid var(--border); border-radius: 4px; padding: 11px;
+               min-height: 120px; white-space: pre-wrap; font-size: 1em; line-height: 1.5; }
+  .thinking { color: var(--muted); animation: blink 1s infinite; }
+  @keyframes blink { 0%,100%{opacity:1;} 50%{opacity:.3;} }
+  .chip-row { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 9px; }
+  .chip { background: var(--bg); border: 1px solid var(--border); padding: 2px 8px; border-radius: 12px;
+          font-size: 0.85em; color: var(--muted); cursor: pointer; }
+  .chip:hover { border-color: var(--accent); color: var(--accent); }
+
+  ::-webkit-scrollbar { width: 5px; height: 5px; }
+  ::-webkit-scrollbar-track { background: var(--bg); }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<!-- TOP BAR -->
+<div id="topbar">
+  <h1>⚔ NWN AI</h1>
+  <div class="stat-pill" id="pill-dmg-in"><div class="label">DMG IN</div><div class="val" id="stat-dmg-in">—</div></div>
+  <div class="stat-pill" id="pill-dmg-out"><div class="label">DMG OUT</div><div class="val" id="stat-dmg-out">—</div></div>
+  <div class="stat-pill pill-dead" id="pill-deaths">
+    <div class="label">PC DEATHS</div>
+    <div class="val dead" id="stat-deaths">—</div>
+    <div class="label" id="stat-killer" style="font-size:0.77em;color:var(--yellow);max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></div>
+  </div>
+  <div class="stat-pill" id="pill-saves">
+    <div class="label">SAVE FAILS</div>
+    <div class="val warn" id="stat-saves">—</div>
+    <div class="label" id="stat-top-save" style="font-size:0.77em;color:var(--yellow);"></div>
+  </div>
+  <div id="death-timer-bar"></div>
+  <div id="indicator">
+    <button id="scope-live" class="scope-btn active" onclick="setScope('live')">Live</button>
+    <button id="scope-all"  class="scope-btn"        onclick="setScope('all')">All History</button>
+    <span id="live-dot" class="dot"></span><span id="live-label">Waiting</span>
+  </div>
+  <button id="settings-btn" onclick="toggleSettings()" title="Settings">⚙</button>
+</div>
+
+<!-- SETTINGS PANEL -->
+<div id="settings-panel">
+  <h4>Display Settings</h4>
+  <div class="setting-row">
+    <label>Font Size</label>
+    <input type="range" id="font-slider" min="11" max="22" step="1" value="13" oninput="applyFontSize(this.value)">
+    <span id="font-size-val">13px</span>
+  </div>
+</div>
+
+<!-- TABS -->
+<div id="tabs">
+  <div class="tab active" data-tab="live">Live Feed</div>
+  <div class="tab" data-tab="damage">Damage</div>
+  <div class="tab" data-tab="saves">Saves</div>
+  <div class="tab" data-tab="spells">Spells</div>
+  <div class="tab" data-tab="status">PC Status</div>
+  <div class="tab" data-tab="bestiary">Bestiary</div>
+  <div class="tab" data-tab="ai">AI Query</div>
+</div>
+
+<!-- CONTENT -->
+<div id="content">
+
+<!-- ── LIVE FEED ── -->
+<div class="tab-panel active" id="tab-live">
+  <div class="card w-3-5">
+    <h3>Real-time Combat Feed</h3>
+    <div id="feed"></div>
+  </div>
+  <div style="display:flex;flex-direction:column;gap:10px;width:calc(40% - 5px);">
+    <div class="card" style="flex:0 0 auto;">
+      <h3>Death Timers (5-min Limbo)</h3>
+      <div id="death-panel"><span style="color:var(--muted);font-size:0.85em">No PC deaths this session.</span></div>
+    </div>
+    <div class="card" style="flex:1;min-height:0;">
+      <h3>Recent Save Failures</h3>
+      <div id="live-save-fails" style="max-height:280px;overflow-y:auto;">
+        <div style="color:var(--muted);font-size:0.85em">No save failures yet.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── DAMAGE ── -->
+<div class="tab-panel" id="tab-damage">
+  <div class="card w-half">
+    <h3>Damage Types Received by PCs</h3>
+    <canvas id="dmg-chart" height="200"></canvas>
+  </div>
+  <div class="card w-half">
+    <h3>Damage Types Dealt by PCs</h3>
+    <canvas id="dmg-out-chart" height="200"></canvas>
+  </div>
+  <div class="card w-full">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
+      <h3 style="margin:0;">Full Damage Breakdown</h3>
+      <button class="btn btn-sec" style="padding:2px 9px;font-size:0.77em;" onclick="setDmgView('in')">Mobs → PCs</button>
+      <button class="btn btn-sec" style="padding:2px 9px;font-size:0.77em;" onclick="setDmgView('out')">PCs → Mobs</button>
+    </div>
+    <div class="tbl-scroll" id="dmg-breakdown-wrap">
+      <table id="dmg-breakdown-table"><thead></thead><tbody></tbody></table>
+    </div>
+  </div>
+  <div class="card w-half">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+      <h3 style="margin:0;">Attack Accuracy</h3>
+      <button class="btn btn-sec" style="padding:2px 8px;font-size:0.77em;" onclick="setAccView('pc')">PC → Mob</button>
+      <button class="btn btn-sec" style="padding:2px 8px;font-size:0.77em;" onclick="setAccView('mob')">Mob → PC</button>
+    </div>
+    <div class="tbl-scroll">
+      <table id="acc-table">
+        <thead><tr>
+          <th>Attacker</th><th>Defender</th>
+          <th class="num">Atks</th><th class="num">Hits</th>
+          <th class="num">Crits</th><th class="num">Miss</th>
+          <th class="num">Conc</th><th class="num">Hit%</th>
+          <th class="num">AvgAB</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+  <div class="card w-half">
+    <h3>Mob Kill Detail (PC Deaths)</h3>
+    <div id="kill-detail-dmg" class="tbl-scroll" style="max-height:260px;"></div>
+  </div>
+</div>
+
+<!-- ── SAVES ── -->
+<div class="tab-panel" id="tab-saves">
+  <div class="card w-half">
+    <h3>Save Type Summary (PCs)</h3>
+    <table id="save-sum-table">
+      <thead><tr>
+        <th>Type</th><th>Check</th>
+        <th class="num">Pass</th><th class="num">Fail</th><th class="num">Fail%</th>
+        <th class="num">Max DC</th><th class="num">Avg DC</th><th>Source</th>
+      </tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+  <div class="card w-half">
+    <h3>Recent PC Save Failures</h3>
+    <div id="save-fail-rolling" class="tbl-scroll" style="max-height:300px;"></div>
+  </div>
+  <div class="card w-half">
+    <h3>Worst DC Sources</h3>
+    <table id="save-fail-table">
+      <thead><tr>
+        <th>Save</th><th>Check</th><th>Source</th>
+        <th class="num">DC</th><th class="num">Fails</th><th class="num">Avg Bonus</th>
+      </tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+  <div class="card w-half">
+    <h3>Spell Checks (SR / SP / Turn / Dispel)</h3>
+    <table id="spell-check-table">
+      <thead><tr>
+        <th>Type</th><th>Source</th><th>Target</th><th>Result</th>
+        <th class="num">Count</th><th class="num">Avg Val</th><th class="num">Max Val</th>
+      </tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ── SPELLS ── -->
+<div class="tab-panel" id="tab-spells">
+  <div class="card w-half">
+    <h3>Spells Cast</h3>
+    <table id="spells-table">
+      <thead><tr>
+        <th>Caster</th><th>Spell</th>
+        <th class="num">Cast</th><th>Type</th>
+      </tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+  <div class="card w-half">
+    <h3>Bard Songs</h3>
+    <table id="songs-table">
+      <thead><tr>
+        <th>Bard</th><th class="num">Songs</th>
+      </tr></thead>
+      <tbody></tbody>
+    </table>
+    <div style="margin-top:10px;">
+      <h3 style="margin-bottom:6px;">Spell Resistance Checks</h3>
+      <div class="tbl-scroll" id="sr-wrap">
+        <table id="sr-table">
+          <thead><tr>
+            <th>Check</th><th>Source</th><th>Target</th><th>Result</th>
+            <th class="num">Count</th><th class="num">Avg</th><th class="num">Max</th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  <div class="card w-full">
+    <h3>Spell-Related Save Failures (DC Analysis)</h3>
+    <table id="spell-saves-table">
+      <thead><tr>
+        <th>Target</th><th>Save</th><th>Source Spell</th>
+        <th class="num">DC</th><th class="num">Roll</th><th class="num">Bonus</th>
+        <th class="num">Total</th><th>Time</th>
+      </tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ── PC STATUS ── -->
+<div class="tab-panel" id="tab-status">
+  <div class="card w-full">
+    <h3>Current Area &amp; PC Immunities</h3>
+    <div id="current-area" style="color:var(--accent);font-size:1.08em;margin-bottom:8px;">—</div>
+    <div id="imm-grid" class="imm-grid"></div>
+  </div>
+  <div class="card w-third">
+    <h3>Debuff Alerts</h3>
+    <div id="debuff-alerts"></div>
+  </div>
+  <div class="card w-third">
+    <h3>PC Deaths This Session</h3>
+    <div id="kill-detail-status" style="max-height:280px;overflow-y:auto;"></div>
+  </div>
+  <div class="card w-third">
+    <h3>Detected Player Characters</h3>
+    <div id="pc-list" style="max-height:280px;overflow-y:auto;"></div>
+  </div>
+</div>
+
+<!-- ── BESTIARY ── -->
+<div class="tab-panel" id="tab-bestiary">
+  <div style="display:flex;gap:10px;align-items:flex-start;width:100%;">
+    <div class="card" style="width:220px;flex-shrink:0;">
+      <h3 style="margin-bottom:5px;">All Creatures</h3>
+      <input id="browse-filter" type="text" placeholder="Filter..." autocomplete="off" oninput="filterBrowse(this.value)">
+      <div id="creature-list" style="max-height:560px;overflow-y:auto;font-size:0.85em;"></div>
+    </div>
+    <div class="card" style="flex:1;">
+      <h3>Mob Lookup</h3>
+      <input id="search-input" type="text" placeholder="Search creature name..." autocomplete="off">
+      <div id="mob-results"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ── AI QUERY ── -->
+<div class="tab-panel" id="tab-ai">
+  <div class="card w-full">
+    <h3>AI Combat Analyst</h3>
+    <div class="chip-row">
+      <span class="chip" onclick="setQ('What is killing me the most?')">What&apos;s killing me?</span>
+      <span class="chip" onclick="setQ('What damage types am I taking the most?')">Damage breakdown</span>
+      <span class="chip" onclick="setQ('What saves are failing and why?')">Save failures</span>
+      <span class="chip" onclick="setQ('What should I worry about most right now?')">Top threats</span>
+      <span class="chip" onclick="setQ('What damage type should I use against my current enemies?')">Best attacks</span>
+      <span class="chip" onclick="setQ('How is my hit rate and accuracy?')">Accuracy report</span>
+      <span class="chip" onclick="setQ('What spells or abilities are being used against me?')">Spell threats</span>
+      <span class="chip" onclick="setQ('What are the required stats for this area?')">Area stats</span>
+    </div>
+    <div id="query-box">
+      <textarea id="question-input" placeholder="Type question and press Enter (Shift+Enter for newline)..."></textarea>
+      <div class="query-row">
+        <button class="btn" id="ask-btn" onclick="sendQuery()">Ask AI</button>
+        <span id="ollama-status">Checking Ollama...</span>
+      </div>
+      <div id="ai-answer">Your AI analyst is ready. Ask a question above or click a quick chip.</div>
+    </div>
+  </div>
+</div>
+
+</div><!-- #content -->
+
+<script>
+// ════════════════════════════════════════════════════════════════
+// STATE
+// ════════════════════════════════════════════════════════════════
+let currentSession = null;
+let dmgChart = null;
+let dmgOutChart = null;
+let feedBuffer = [];
+const MAX_FEED = 200;
+let _liveSessionId = null;
+let _allCreatures = [];
+let _dmgView = 'in';   // 'in' = mobs→PCs, 'out' = PCs→mobs
+let _accView = 'pc';   // 'pc' = PC→mob, 'mob' = mob→PC
+
+// Death timer state
+const _deathTimers = {};  // pcName → { deadline, timerId }
+const LIMBO_MS = 5 * 60 * 1000;
+
+// ════════════════════════════════════════════════════════════════
+// DEATH TIMER
+// ════════════════════════════════════════════════════════════════
+function startDeathTimer(name, tsIso) {
+  if (_deathTimers[name]) clearInterval(_deathTimers[name].timerId);
+  const diedAt   = tsIso ? new Date(tsIso) : new Date();
+  const deadline = new Date(diedAt.getTime() + LIMBO_MS);
+  const timerId  = setInterval(() => renderDeathTimers(), 1000);
+  _deathTimers[name] = { deadline, timerId, killer: null };
+  renderDeathTimers();
+}
+function cancelDeathTimer(name) {
+  if (_deathTimers[name]) {
+    clearInterval(_deathTimers[name].timerId);
+    delete _deathTimers[name];
+    renderDeathTimers();
+  }
+}
+function renderDeathTimers() {
+  const entries = Object.entries(_deathTimers);
+  const bar   = document.getElementById('death-timer-bar');
+  const panel = document.getElementById('death-panel');
+
+  if (!entries.length) {
+    if (bar)   bar.innerHTML = '';
+    if (panel) panel.innerHTML = '<span style="color:var(--muted);font-size:0.85em">No deaths this session.</span>';
+    return;
+  }
+
+  const rows = entries.map(([name, info]) => {
+    const rem  = info.deadline - Date.now();
+    const secs = Math.max(0, Math.floor(rem / 1000));
+    const mins = Math.floor(secs / 60);
+    const s    = secs % 60;
+    const label = secs <= 0 ? 'LIMBO' : `${mins}:${String(s).padStart(2,'0')}`;
+    const col   = secs <= 0 ? 'var(--yellow)' : secs < 60 ? 'var(--red)' : secs < 120 ? 'var(--yellow)' : 'var(--accent)';
+    return { name, label, col, secs };
+  });
+
+  if (bar) {
+    bar.innerHTML = rows.map(r =>
+      `<div class="death-pill" style="border-color:${r.col}">
+         <span class="dp-name">${esc(r.name)}</span>
+         <span class="dp-timer" style="color:${r.col}">${r.label}</span>
+       </div>`
+    ).join('');
+  }
+  if (panel) {
+    panel.innerHTML = rows.map(r => {
+      const cls = r.secs <= 0 ? 'dp-limbo' : '';
+      return `<div class="dp-row ${cls}">
+        <div>
+          <div class="dp-nm">${esc(r.name)}</div>
+          <div class="dp-kt">${r.secs <= 0 ? '⚠ Respawned to Limbo' : 'Counting down…'}</div>
+        </div>
+        <div class="dp-cd" style="color:${r.col}">${r.label}</div>
+      </div>`;
+    }).join('');
+  }
+}
+
+// ════════════════════════════════════════════════════════════════
+// SOCKET.IO
+// ════════════════════════════════════════════════════════════════
+const socket = io();
+socket.on('connect',    () => setLive(true));
+socket.on('disconnect', () => setLive(false));
+socket.on('event', ev => {
+  if (['attack','damage','kill','save','spell','resurrect'].includes(ev.type)) addFeedRow(ev);
+  if (['damage','kill','save'].includes(ev.type)) refreshSnapshot();
+
+  if (ev.type === 'kill' && ev.victim_is_pc) {
+    startDeathTimer(ev.victim, ev.ts);
+  }
+  if (ev.type === 'resurrect') {
+    cancelDeathTimer(ev.target);
+    addFeedRow(ev);
+  }
+  if (ev.type === 'save' && ev.target_is_pc && ['failure','automatic failure'].includes(ev.result)) {
+    prependSaveFailRow(ev, 'live-save-fails');
+    prependSaveFailRow(ev, 'save-fail-rolling');
+  }
+  if (ev.type === 'debuff_alert') {
+    const statusTab = document.querySelector('[data-tab="status"]');
+    if (statusTab) { statusTab.style.color = ev.alert_level === 'CRITICAL' ? 'var(--red)' : 'var(--yellow)';
+                     setTimeout(() => statusTab.style.color = '', 4000); }
+    if (document.querySelector('.tab.active')?.dataset.tab === 'status') refreshStatus();
+    showAlert(ev);
+  }
+  if (ev.type === 'area') {
+    document.getElementById('current-area').textContent = 'Area: ' + ev.area;
+  }
+  if (ev.type === 'pc_detected') {
+    const list = document.getElementById('pc-list');
+    if (list && !list.innerHTML.includes(esc(ev.name))) {
+      const chip = document.createElement('span');
+      chip.className = 'pc-chip';
+      chip.title = 'Via: ' + ev.channel;
+      chip.textContent = ev.name;
+      list.prepend(chip);
+    }
+  }
+  if (ev.type === 'pc_immunity' && document.querySelector('.tab.active')?.dataset.tab === 'status') refreshStatus();
+});
+
+function setLive(on) {
+  document.getElementById('live-dot').className   = 'dot' + (on ? ' live' : '');
+  document.getElementById('live-label').textContent = on ? 'Live' : 'Off';
+}
+
+// Debuff banner
+let _alertTimeout = null;
+function showAlert(ev) {
+  let b = document.getElementById('alert-banner');
+  if (!b) {
+    b = document.createElement('div');
+    b.id = 'alert-banner';
+    b.style.cssText = 'position:fixed;top:54px;right:16px;z-index:999;padding:9px 14px;border-radius:6px;font-size:1em;font-weight:bold;cursor:pointer;max-width:340px;';
+    b.onclick = () => b.remove();
+    document.body.appendChild(b);
+  }
+  const isCrit = ev.alert_level === 'CRITICAL';
+  b.style.background = isCrit ? '#3a0a0a' : '#2a2a0a';
+  b.style.border = `2px solid ${isCrit ? 'var(--red)' : 'var(--yellow)'}`;
+  b.style.color  = isCrit ? 'var(--red)' : 'var(--yellow)';
+  b.textContent  = `⚠ ${ev.alert_level}: ${ev.damage_type.toUpperCase()} immunity ${ev.old_value}% → ${ev.new_value}% (−${ev.drop_amount}%)`;
+  clearTimeout(_alertTimeout);
+  _alertTimeout = setTimeout(() => b.remove(), 12000);
+}
+
+// ════════════════════════════════════════════════════════════════
+// TABS
+// ════════════════════════════════════════════════════════════════
+document.querySelectorAll('.tab').forEach(t => {
+  t.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(x => x.classList.remove('active'));
+    t.classList.add('active');
+    document.getElementById('tab-' + t.dataset.tab).classList.add('active');
+    if (t.dataset.tab === 'damage')  refreshDamage();
+    if (t.dataset.tab === 'saves')   refreshSaves();
+    if (t.dataset.tab === 'spells')  refreshSpells();
+    if (t.dataset.tab === 'status')  refreshStatus();
+    if (t.dataset.tab === 'bestiary' && !_allCreatures.length) loadCreatureList();
+  });
+});
+
+// ════════════════════════════════════════════════════════════════
+// SCOPE TOGGLE
+// ════════════════════════════════════════════════════════════════
+async function initScope() {
+  const sessions = await (await fetch('/api/sessions')).json();
+  if (sessions.length) _liveSessionId = sessions[0].id;
+  setScope('live');
+}
+function setScope(mode) {
+  document.getElementById('scope-live').classList.toggle('active', mode === 'live');
+  document.getElementById('scope-all').classList.toggle('active', mode === 'all');
+  currentSession = (mode === 'live' && _liveSessionId) ? _liveSessionId : null;
+  refreshAll();
+}
+
+// ════════════════════════════════════════════════════════════════
+// SNAPSHOT
+// ════════════════════════════════════════════════════════════════
+async function refreshSnapshot() {
+  const url = '/api/snapshot' + qs();
+  const d = await (await fetch(url)).json();
+  document.getElementById('stat-dmg-in').textContent  = fmtNum(d.damage_received);
+  document.getElementById('stat-dmg-out').textContent = fmtNum(d.damage_dealt);
+  document.getElementById('stat-deaths').textContent  = d.pc_deaths;
+  document.getElementById('stat-saves').textContent   = d.save_failures;
+  const kEl = document.getElementById('stat-killer');
+  if (kEl) kEl.textContent = d.last_killer ? ('by ' + d.last_killer) : '';
+  const sEl = document.getElementById('stat-top-save');
+  if (sEl) sEl.textContent = d.top_fail_save ? d.top_fail_save : '';
+}
+
+// ════════════════════════════════════════════════════════════════
+// DAMAGE TAB
+// ════════════════════════════════════════════════════════════════
+async function refreshDamage() {
+  const s = qs();
+
+  // Chart: types received
+  const dr = await (await fetch('/api/damage_in' + s)).json();
+  renderDmgChart('dmg-chart', dr.filter(x=>x.total>0), dmgChart, c => dmgChart = c);
+
+  // Chart: types dealt
+  // Use damage_breakdown with vs=mob and sum across all attackers per type
+  const dout = await (await fetch('/api/damage_breakdown?vs=mob' + (currentSession ? '&session='+currentSession : ''))).json();
+  // aggregate across all PCs
+  const typeOut = {};
+  for (const row of dout) {
+    for (const [k, v] of Object.entries(row)) {
+      if (k.startsWith('dmg_') && v) typeOut[k] = (typeOut[k]||0) + v;
+    }
+  }
+  const drOut = Object.entries(typeOut)
+    .map(([k,v]) => ({ type: k.replace('dmg_','').replace(/_/g,' '), total: v }))
+    .filter(x => x.total > 0)
+    .sort((a,b) => b.total - a.total)
+    .slice(0, 20);
+  renderDmgChart('dmg-out-chart', drOut, dmgOutChart, c => dmgOutChart = c);
+
+  // Full breakdown table
+  await loadDmgBreakdown();
+
+  // Accuracy table
+  await loadAccuracy();
+
+  // Kill detail
+  await loadKillDetail('kill-detail-dmg');
+}
+
+function renderDmgChart(canvasId, data, existing, setter) {
+  const labels = data.map(x => x.type);
+  const vals   = data.map(x => x.total);
+  const colors = labels.map(l => dmgColor(l));
+  if (existing) {
+    existing.data.labels = labels;
+    existing.data.datasets[0].data   = vals;
+    existing.data.datasets[0].backgroundColor = colors;
+    existing.update();
+  } else {
+    const ctx = document.getElementById(canvasId)?.getContext('2d');
+    if (!ctx) return;
+    setter(new Chart(ctx, {
+      type: 'bar',
+      data: { labels, datasets: [{ data: vals, backgroundColor: colors, borderRadius: 3 }] },
+      options: {
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { ticks: { color: '#7a8299', font: { size: 11 } }, grid: { color: '#1a1d26' } },
+          y: { ticks: { color: '#7a8299' }, grid: { color: '#1a1d26' } }
+        }
+      }
+    }));
+  }
+}
+
+async function setDmgView(v) {
+  _dmgView = v;
+  await loadDmgBreakdown();
+}
+
+async function loadDmgBreakdown() {
+  const ep = '/api/damage_breakdown?vs=' + (_dmgView === 'in' ? 'pc' : 'mob') +
+             (currentSession ? '&session=' + currentSession : '');
+  const data = await (await fetch(ep)).json();
+  renderDmgBreakdown(data);
+}
+
+function renderDmgBreakdown(rows) {
+  // Determine which dmg_* columns have any data
+  const dmgCols = Object.keys(rows[0] || {}).filter(k => k.startsWith('dmg_'));
+  const activeCols = dmgCols.filter(col => rows.some(r => r[col] > 0));
+  // Sort by total contribution
+  activeCols.sort((a, b) => {
+    const sa = rows.reduce((sum, r) => sum + (r[b]||0), 0);
+    const sb = rows.reduce((sum, r) => sum + (r[a]||0), 0);
+    return sa - sb;
+  });
+
+  const thead = document.querySelector('#dmg-breakdown-table thead');
+  const tbody = document.querySelector('#dmg-breakdown-table tbody');
+  const label = col => col.replace('dmg_','').replace(/_/g,' ');
+
+  thead.innerHTML = '<tr>' +
+    '<th>Name</th><th class="num">Total</th><th class="num">Hits</th>' +
+    activeCols.map(c => `<th class="num">${label(c)}</th>`).join('') +
+    '</tr>';
+
+  const maxTotal = rows[0]?.total || 1;
+  tbody.innerHTML = rows.map(r => `<tr>
+    <td class="bar-cell">
+      <div class="bar-fill" style="width:${Math.round(100*r.total/maxTotal)}%"></div>
+      <span class="bar-text">${esc(r.name)}</span>
+    </td>
+    <td class="num">${fmtNum(r.total)}</td>
+    <td class="num">${r.hits}</td>
+    ${activeCols.map(c => {
+      const v = r[c] || 0;
+      return `<td class="num dmg-type-val${v ? ' nz' : ''}">${v || ''}</td>`;
+    }).join('')}
+  </tr>`).join('');
+}
+
+async function setAccView(v) {
+  _accView = v;
+  await loadAccuracy();
+}
+
+async function loadAccuracy() {
+  const ep = '/api/accuracy_detail?attacker=' + _accView +
+             (currentSession ? '&session=' + currentSession : '');
+  const data = await (await fetch(ep)).json();
+  const tbody = document.querySelector('#acc-table tbody');
+  tbody.innerHTML = data.map(r => `<tr>
+    <td>${esc(r.attacker)}</td>
+    <td>${esc(r.defender)}</td>
+    <td class="num">${r.total}</td>
+    <td class="num hit">${r.hits}</td>
+    <td class="num crit">${r.crits}</td>
+    <td class="num miss">${r.misses}</td>
+    <td class="num">${r.concealed}</td>
+    <td class="num ${r.hit_pct >= 70 ? 'good' : r.hit_pct >= 40 ? 'warn' : 'dead'}">${r.hit_pct}%</td>
+    <td class="num">${r.avg_bonus || '?'}</td>
+  </tr>`).join('');
+}
+
+// ════════════════════════════════════════════════════════════════
+// SAVES TAB
+// ════════════════════════════════════════════════════════════════
+async function refreshSaves() {
+  const s = qs();
+
+  // Save type summary
+  const sr = await (await fetch('/api/save_summary' + s)).json();
+  document.querySelector('#save-sum-table tbody').innerHTML = sr.map(r => {
+    const total = (r.passed||0) + (r.failed||0);
+    const pct   = total ? Math.round(100 * r.failed / total) : 0;
+    return `<tr>
+      <td>${esc(r.save_type)}</td>
+      <td style="color:var(--muted);font-size:0.85em">${esc(r.check_type||'save')}</td>
+      <td class="num good">${r.passed}</td>
+      <td class="num dead">${r.failed}</td>
+      <td class="num ${pct>=50?'dead':pct>=25?'warn':''}">${pct}%</td>
+      <td class="num warn">${r.max_dc||'—'}</td>
+      <td class="num">${r.avg_dc||'—'}</td>
+      <td style="color:var(--muted);font-size:0.85em;max-width:140px;overflow:hidden;text-overflow:ellipsis" title="${esc(r.example_source||'')}">
+        ${esc((r.example_source||'').substring(0,30))}
+      </td>
+    </tr>`;
+  }).join('');
+
+  // Recent failures rolling list
+  await refreshSaveFailRolling();
+
+  // Worst DC sources
+  const wf = await (await fetch('/api/save_failures' + s)).json();
+  document.querySelector('#save-fail-table tbody').innerHTML = wf.map(r => `<tr>
+    <td>${esc(r.save_type)}</td>
+    <td style="color:var(--muted);font-size:0.85em">${esc(r.check_type||'save')}</td>
+    <td style="color:var(--muted)">${esc(r.vs_source||'—')}</td>
+    <td class="num dead">${r.dc||'?'}</td>
+    <td class="num">${r.fail_count}</td>
+    <td class="num">${r.avg_bonus ? Math.round(r.avg_bonus) : '—'}</td>
+  </tr>`).join('');
+
+  // Spell checks
+  await refreshSpellChecks('#spell-check-table tbody');
+}
+
+async function refreshSaveFailRolling() {
+  const s = qs();
+  const rows = await (await fetch('/api/save_failures_recent' + s)).json();
+  const el = document.getElementById('save-fail-rolling');
+  if (!el) return;
+  el.innerHTML = rows.length
+    ? rows.map(r => saveFRHtml(r)).join('')
+    : '<div style="color:var(--muted);font-size:0.85em">No save failures.</div>';
+}
+
+function saveFRHtml(r) {
+  return `<div class="sfail-row">
+    <span class="sfail-ts">${(r.ts||'').substring(11,19)}</span>
+    <span class="sfail-who">${esc(r.target||'?')}</span>
+    <span class="sfail-save">${esc(r.save_type||'?')}</span>
+    <span class="sfail-dc">DC ${r.dc||'?'}</span>
+    <span class="sfail-src" title="${esc(r.vs_source||'')}">${esc((r.vs_source||'—').substring(0,30))}</span>
+  </div>`;
+}
+
+function prependSaveFailRow(ev, elId) {
+  const el = document.getElementById(elId);
+  if (!el) return;
+  const placeholder = el.querySelector('div[style*="muted"]');
+  if (placeholder) placeholder.remove();
+  el.insertAdjacentHTML('afterbegin', saveFRHtml(ev));
+  // trim to 60 rows
+  while (el.children.length > 60) el.lastChild.remove();
+}
+
+async function refreshSpellChecks(selector) {
+  const s = qs();
+  const rows = await (await fetch('/api/spell_checks' + s)).json();
+  const tbody = document.querySelector(selector);
+  if (!tbody) return;
+  tbody.innerHTML = rows.map(r => `<tr>
+    <td style="color:var(--purple)">${esc(r.check_type)}</td>
+    <td>${esc(r.source||'—')}</td>
+    <td>${esc(r.target||'—')}</td>
+    <td class="${r.result==='success'||r.result==='defeated'?'good':'dead'}">${esc(r.result)}</td>
+    <td class="num">${r.count}</td>
+    <td class="num">${r.avg_val||'—'}</td>
+    <td class="num">${r.max_val||'—'}</td>
+  </tr>`).join('');
+}
+
+// ════════════════════════════════════════════════════════════════
+// SPELLS TAB
+// ════════════════════════════════════════════════════════════════
+async function refreshSpells() {
+  const s = qs();
+
+  // Spells cast
+  const sp = await (await fetch('/api/spells' + s)).json();
+  document.querySelector('#spells-table tbody').innerHTML = sp.map(r => `<tr>
+    <td>${esc(r.caster)}</td>
+    <td>${esc(r.spell_name)}${r.is_song || r.song_count > 0 ? '<span class="song-chip">SONG</span>' : ''}</td>
+    <td class="num">${r.cast_count}</td>
+    <td style="color:var(--muted);font-size:0.85em">${r.song_count > 0 ? 'song' : 'spell'}</td>
+  </tr>`).join('');
+
+  // Songs
+  const so = await (await fetch('/api/songs' + s)).json();
+  document.querySelector('#songs-table tbody').innerHTML = so.map(r => `<tr>
+    <td>${esc(r.caster)}</td>
+    <td class="num good">${r.song_count}</td>
+  </tr>`).join('');
+
+  // SR checks
+  await refreshSpellChecks('#sr-table tbody');
+
+  // Spell-related save failures
+  const sf = await (await fetch('/api/save_failures_recent' + s)).json();
+  document.querySelector('#spell-saves-table tbody').innerHTML = sf.slice(0, 30).map(r => `<tr>
+    <td>${esc(r.target||'?')}</td>
+    <td class="warn">${esc(r.save_type||'?')}</td>
+    <td style="color:var(--muted)">${esc((r.vs_source||'—').substring(0,30))}</td>
+    <td class="num dead">${r.dc||'?'}</td>
+    <td class="num">${r.roll||'?'}</td>
+    <td class="num">${r.bonus||'?'}</td>
+    <td class="num">${r.total||'?'}</td>
+    <td style="color:var(--muted);font-size:0.85em">${(r.ts||'').substring(11,19)}</td>
+  </tr>`).join('');
+}
+
+// ════════════════════════════════════════════════════════════════
+// PC STATUS TAB
+// ════════════════════════════════════════════════════════════════
+async function refreshStatus() {
+  const s = qs();
+  const d = await (await fetch('/api/pc_status' + s)).json();
+
+  document.getElementById('current-area').textContent =
+    d.current_area ? 'Area: ' + d.current_area : 'Area: unknown';
+
+  const imm = d.immunity || {};
+  const dmgTypes = [
+    'bludgeoning','piercing','slashing','magical','acid','cold',
+    'divine','electrical','fire','negative','positive','sonic',
+    'subdual','ectoplasmic','psionic','sacred','vile','primal','anarchic','axiomatic'
+  ];
+  const grid = document.getElementById('imm-grid');
+  if (!Object.keys(imm).length) {
+    grid.innerHTML = '<div style="color:var(--muted);font-size:0.85em">No immunity data yet — enter a zone to trigger the block.</div>';
+  } else {
+    grid.innerHTML = dmgTypes.map(t => {
+      const pct = imm['imm_' + t] ?? null;
+      const dr  = imm['res_' + t] ?? 0;
+      if (pct === null) return '';
+      const cls   = pct < 20 ? 'imm-danger' : pct < 50 ? 'imm-warn' : 'imm-good';
+      const color = pct >= 100 ? 'var(--green)' : pct >= 50 ? 'var(--yellow)' : pct < 0 ? 'var(--red)' : 'var(--text)';
+      return `<div class="imm-cell ${cls}">
+        <div class="dtype">${t}</div>
+        <div class="ipct" style="color:${color}">${pct}%</div>
+        ${dr ? `<div class="idr">${dr}/- DR</div>` : ''}
+      </div>`;
+    }).join('');
+  }
+
+  // Debuff alerts
+  const alerts = d.alerts || [];
+  document.getElementById('debuff-alerts').innerHTML = alerts.length
+    ? alerts.map(a => `
+        <div class="alert-row alert-${a.alert_level}">
+          <strong>${a.alert_level}</strong> — ${a.damage_type.toUpperCase()}
+          immunity ${a.old_value}% → ${a.new_value}%
+          (${a.drop_amount > 0 ? '-' : '+'}${Math.abs(a.drop_amount)}%)
+          <span style="color:var(--muted);font-size:0.77em;float:right">${(a.ts||'').substring(11,19)}</span>
+        </div>`).join('')
+    : '<div style="color:var(--green);font-size:0.85em">No debuff drops detected.</div>';
+
+  // PC list
+  const pcs = d.pcs || [];
+  document.getElementById('pc-list').innerHTML = pcs.length
+    ? pcs.map(p => `<span class="pc-chip" title="First: ${p.first_seen||''} | Via: ${p.source||''}">${esc(p.name)}</span>`).join('')
+    : '<div style="color:var(--muted);font-size:0.85em">No PCs detected yet.</div>';
+
+  // Kill detail in status tab
+  await loadKillDetail('kill-detail-status');
+}
+
+async function loadKillDetail(elId) {
+  const el = document.getElementById(elId);
+  if (!el) return;
+  const s = qs();
+  const kills = await (await fetch('/api/pc_kills' + s)).json();
+  el.innerHTML = kills.length
+    ? kills.map(k => `<div class="kill-row">
+        <div class="kts">${(k.ts||'').substring(11,19)}</div>
+        <div><span class="kvic">${esc(k.victim)}</span> killed by <span class="kkil">${esc(k.killer)}</span></div>
+        ${k.last_hit ? `<div class="khow">Last hit: ${esc(k.last_hit)}</div>` : ''}
+      </div>`).join('')
+    : '<div style="color:var(--muted);font-size:0.85em">No PC deaths recorded.</div>';
+}
+
+// ════════════════════════════════════════════════════════════════
+// LIVE FEED
+// ════════════════════════════════════════════════════════════════
+function addFeedRow(ev) {
+  feedBuffer.unshift(ev);
+  if (feedBuffer.length > MAX_FEED) feedBuffer.pop();
+  renderFeed();
+}
+async function loadRecentFeed() {
+  const s = qs();
+  feedBuffer = await (await fetch('/api/recent' + s)).json();
+  renderFeed();
+}
+function renderFeed() {
+  const feedEl = document.getElementById('feed');
+  feedEl.innerHTML = feedBuffer.slice(0, MAX_FEED).map(ev => {
+    const ts = (ev.ts || '').substring(11, 19);
+    return `<div class="feed-row">
+      <span class="feed-ts">${ts}</span>
+      <span class="feed-type t-${ev.type}">${ev.type.toUpperCase()}</span>
+      <span class="feed-text">${esc(ev.summary || formatEv(ev))}</span>
+    </div>`;
+  }).join('');
+}
+function formatEv(ev) {
+  if (ev.type === 'attack')    return `${ev.attacker} → ${ev.defender} [${ev.hit_type}] (${ev.roll}+${ev.bonus}=${ev.total})`;
+  if (ev.type === 'damage')    return `${ev.attacker} → ${ev.defender}: ${ev.total_damage} dmg`;
+  if (ev.type === 'kill')      return `${ev.killer} killed ${ev.victim}`;
+  if (ev.type === 'save')      return `${ev.target}: ${ev.save_type} vs DC ${ev.dc} [${ev.result}]`;
+  if (ev.type === 'spell')     return `${ev.caster} ${ev.action||''} ${ev.spell_name||''}`;
+  if (ev.type === 'resurrect') return `${ev.caster} resurrected ${ev.target} (${ev.result})`;
+  return JSON.stringify(ev);
+}
+
+// ════════════════════════════════════════════════════════════════
+// BESTIARY
+// ════════════════════════════════════════════════════════════════
+async function loadCreatureList() {
+  _allCreatures = await (await fetch('/api/creatures')).json();
+  renderCreatureList(_allCreatures);
+  document.getElementById('search-input').addEventListener('input', e => {
+    const q = e.target.value.trim();
+    if (q.length >= 2) searchMob(q); else document.getElementById('mob-results').innerHTML = '';
+  });
+  document.getElementById('search-input').addEventListener('keydown', e => {
+    if (e.key === 'Enter') searchMob(e.target.value.trim());
+  });
+}
+function renderCreatureList(list) {
+  const el = document.getElementById('creature-list');
+  el.innerHTML = list.map(c =>
+    `<div style="padding:3px 5px;cursor:pointer;border-bottom:1px solid #1a1d26;"
+          onclick="fetchMob(${JSON.stringify(c.name)})"
+          onmouseover="this.style.background='#1a1d26'" onmouseout="this.style.background=''"
+     ><span style="color:var(--accent)">${esc(c.name)}</span>
+     ${c.race ? `<span style="color:var(--muted);font-size:0.77em"> ${esc(c.race)}</span>` : ''}
+     </div>`
+  ).join('');
+}
+function filterBrowse(v) {
+  const q = v.toLowerCase();
+  renderCreatureList(q ? _allCreatures.filter(c =>
+    (c.name||'').toLowerCase().includes(q) ||
+    (c.race||'').toLowerCase().includes(q) ||
+    (c.areas||'').toLowerCase().includes(q)
+  ) : _allCreatures);
+}
+async function searchMob(q) {
+  if (!q) return;
+  const r = await (await fetch('/api/search?q=' + encodeURIComponent(q))).json();
+  if (!r.length) { document.getElementById('mob-results').innerHTML = '<div style="color:var(--muted)">No match.</div>'; return; }
+  fetchMob(r[0].name);
+}
+async function fetchMob(name) {
+  document.getElementById('search-input').value = name;
+  const r = await (await fetch('/api/mob?name=' + encodeURIComponent(name))).json();
+  renderMob(r);
+}
+function renderMob(r) {
+  if (r.error) { document.getElementById('mob-results').innerHTML = `<div style="color:var(--red)">${esc(r.error)}</div>`; return; }
+  const bd = r.best_damage || [];
+  const best3 = bd.filter(x => x.immunity_pct === 0 && x.resistance_dr === 0).slice(0, 5);
+  const immune = bd.filter(x => x.immunity_pct >= 100);
+  document.getElementById('mob-results').innerHTML = `
+    <div class="mob-entry">
+      <div class="mob-name">${esc(r.name)}</div>
+      <div class="mob-stats">
+        ${[['Race',r.race],['AC',r.ac],['AB',r.ab],['HP',r.hp],['SR',r.sr],['TR',r.tr],['Conc',r.concealment]].filter(x=>x[1]).map(([k,v])=>`<div class="mob-stat"><span class="k">${k} </span><span class="v">${esc(String(v))}</span></div>`).join('')}
+      </div>
+      ${best3.length ? `<div><span style="color:var(--muted);font-size:0.85em">Best dmg: </span><span class="best-dmg">${best3.map(x=>x.type).join(', ')}</span></div>` : ''}
+      ${immune.length ? `<div class="immunity-list">IMMUNE: ${immune.map(x=>x.type).join(', ')}</div>` : ''}
+      ${r.spell_immunities ? `<div style="font-size:0.85em;color:var(--muted)">Spell Imm: ${esc(r.spell_immunities)}</div>` : ''}
+      ${r.special_abilities ? `<div style="font-size:0.85em;color:var(--yellow)">Special: ${esc(r.special_abilities)}</div>` : ''}
+      ${r.takes ? `<div style="font-size:0.85em">Takes: <span style="color:var(--red)">${esc(r.takes)}</span></div>` : ''}
+      ${r.heals ? `<div style="font-size:0.85em">Heals on: <span style="color:var(--green)">${esc(r.heals)}</span></div>` : ''}
+      ${r.areas ? `<div style="font-size:0.77em;color:var(--muted);margin-top:4px">Areas: ${esc(r.areas)}</div>` : ''}
+      ${r.notes ? `<div style="font-size:0.77em;color:var(--muted);margin-top:4px">${esc(r.notes.substring(0,300))}</div>` : ''}
+    </div>`;
+}
+
+// ════════════════════════════════════════════════════════════════
+// AI QUERY
+// ════════════════════════════════════════════════════════════════
+async function checkOllama() {
+  const r = await (await fetch('/api/ollama_status')).json();
+  const el = document.getElementById('ollama-status');
+  if (!r.running)     el.textContent = '⚠ Ollama not running — run: ollama serve';
+  else if (!r.model_ready) el.textContent = '⚠ No model — run pull_model.bat';
+  else el.textContent = '✓ AI ready (' + (r.models[0]||'') + ')';
+}
+function setQ(q) { document.getElementById('question-input').value = q; sendQuery(); }
+async function sendQuery() {
+  const q = document.getElementById('question-input').value.trim();
+  if (!q) return;
+  const ansEl = document.getElementById('ai-answer');
+  ansEl.innerHTML = '<span class="thinking">Analyzing combat data...</span>';
+  const r = await fetch('/api/ask', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ question: q, session_id: currentSession ? parseInt(currentSession) : null }),
+  });
+  const d = await r.json();
+  ansEl.textContent = d.answer || d.error || 'No response.';
+}
+document.getElementById('question-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendQuery(); }
+});
+
+// ════════════════════════════════════════════════════════════════
+// SETTINGS
+// ════════════════════════════════════════════════════════════════
+function applyFontSize(px) {
+  document.documentElement.style.setProperty('--base-font', px + 'px');
+  document.getElementById('font-size-val').textContent = px + 'px';
+  localStorage.setItem('nwnai_font_size', px);
+  if (dmgChart) dmgChart.options.scales.x.ticks.font.size = Math.max(8, Math.round(px * 0.85));
+  if (dmgOutChart) dmgOutChart.options.scales.x.ticks.font.size = Math.max(8, Math.round(px * 0.85));
+  if (dmgChart) dmgChart.update();
+  if (dmgOutChart) dmgOutChart.update();
+}
+function toggleSettings() {
+  document.getElementById('settings-panel').classList.toggle('open');
+}
+document.addEventListener('click', e => {
+  const p = document.getElementById('settings-panel');
+  const b = document.getElementById('settings-btn');
+  if (p.classList.contains('open') && !p.contains(e.target) && e.target !== b) p.classList.remove('open');
+});
+function initSettings() {
+  const saved = localStorage.getItem('nwnai_font_size');
+  if (saved) { document.getElementById('font-slider').value = saved; applyFontSize(saved); }
+}
+
+// ════════════════════════════════════════════════════════════════
+// HELPERS
+// ════════════════════════════════════════════════════════════════
+function qs() { return currentSession ? '?session=' + currentSession : ''; }
+function fmtNum(n) { return (n || 0).toLocaleString(); }
+function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function dmgColor(type) {
+  const m = {
+    fire:'#ff6b35', cold:'#4a9eff', acid:'#3ddc84', electrical:'#ffd32a', sonic:'#a29bfe',
+    divine:'#fff', magical:'#e84393', negative:'#6c5ce7', positive:'#fdcb6e', psionic:'#00cec9',
+    vile:'#d63031', sacred:'#fab1a0', force:'#74b9ff', bludgeoning:'#8a9bb5',
+    piercing:'#9ba3a5', slashing:'#a8b2b4', primal:'#00b894', anarchic:'#e17055',
+    axiomatic:'#81ecec', raw_arcane:'#fd79a8', raw_divine:'#dfe6e9',
+  };
+  return m[type.toLowerCase().replace(/ /g,'_')] || '#7a8299';
+}
+
+function refreshAll() {
+  refreshSnapshot();
+  loadRecentFeed();
+  refreshSaveFailRolling();
+  const t = document.querySelector('.tab.active')?.dataset.tab;
+  if (t === 'damage') refreshDamage();
+  if (t === 'saves')  refreshSaves();
+  if (t === 'spells') refreshSpells();
+  if (t === 'status') refreshStatus();
+}
+
+// ════════════════════════════════════════════════════════════════
+// INIT
+// ════════════════════════════════════════════════════════════════
+(async () => {
+  initSettings();
+  await initScope();
+  await refreshSnapshot();
+  await loadRecentFeed();
+  await checkOllama();
+  setInterval(refreshSnapshot, 5000);
+  setInterval(loadRecentFeed, 10000);
+  setInterval(checkOllama, 30000);
+})();
+</script>
+</body>
+</html>
