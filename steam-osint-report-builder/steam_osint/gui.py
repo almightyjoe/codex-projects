@@ -36,6 +36,7 @@ class App:
         self.events: queue.Queue[tuple[str, object]] = queue.Queue()
         self.worker_thread: threading.Thread | None = None
         self.last_results: list[CollectionResult] = []
+        self.last_html_report: Path | None = None
         self.text_widgets: list[tk.Text] = []
 
         self._build_style()
@@ -88,6 +89,8 @@ class App:
         self.cancel_btn = ttk.Button(btns, text="Cancel", command=self.cancel, state="disabled")
         self.cancel_btn.pack(side="left", padx=6)
         ttk.Button(btns, text="Open Output Folder", command=self._open_output_folder).pack(side="left")
+        self.open_html_btn = ttk.Button(btns, text="Open HTML Report", command=self._open_html_report, state="disabled")
+        self.open_html_btn.pack(side="left", padx=6)
         ttk.Label(btns, textvariable=self.status).pack(side="left", padx=12)
         self.progress = ttk.Progressbar(btns, mode="indeterminate")
         self.progress.pack(side="right", fill="x", expand=True, padx=8)
@@ -144,11 +147,19 @@ class App:
         path.mkdir(parents=True, exist_ok=True)
         self._open_path(path, "output folder")
 
+    def _open_html_report(self) -> None:
+        if not self.last_html_report or not self.last_html_report.exists():
+            messagebox.showwarning("Report Missing", "No HTML report is available yet.")
+            return
+        self._open_path(self.last_html_report, "HTML report")
+
     def start(self) -> None:
         targets = [line.strip() for line in self.targets_box.get("1.0", "end").splitlines() if line.strip()]
         self.cancelled.clear()
         self.run_btn.configure(state="disabled")
         self.cancel_btn.configure(state="normal")
+        self.open_html_btn.configure(state="disabled")
+        self.last_html_report = None
         self.progress.start(12)
         self.status.set("Working...")
         self._set_text(self.console, "")
@@ -219,6 +230,8 @@ class App:
         html_report = result.output_dir / "report.html"
         markdown_report = result.output_dir / "report.md"
         created = [path for path in (markdown_report, html_report) if path.exists()]
+        self.last_html_report = html_report if html_report.exists() else None
+        self.open_html_btn.configure(state="normal" if self.last_html_report else "disabled")
         self.status.set(f"Done. Created {len(created)} report file(s) in {result.output_dir}")
         self._log("Created files:")
         for path in created:
