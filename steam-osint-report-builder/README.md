@@ -5,7 +5,7 @@ Tkinter desktop utility for public and owner-authorized Steam OSINT collection.
 ## Run
 
 ```powershell
-python steam_osint_report_builder.py
+pythonw steam_osint_report_builder.pyw
 ```
 
 On startup, the launcher checks for `requests`, `beautifulsoup4`, `networkx`, and `matplotlib`. Missing runtime packages are installed automatically from `requirements.txt` before the GUI loads. `install_requirements.bat` is included as a manual fallback and also installs `requirements-build.txt` for packaging.
@@ -13,7 +13,7 @@ On startup, the launcher checks for `requests`, `beautifulsoup4`, `networkx`, an
 ## Optional Build
 
 ```powershell
-pyinstaller --noconfirm --onedir --windowed --name SteamOSINTReportBuilder steam_osint_report_builder.py
+pyinstaller --noconfirm --onedir --windowed --name SteamOSINTReportBuilder steam_osint_report_builder.pyw
 ```
 
 ## Boundaries

@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import os
 import queue
+import subprocess
+import sys
 import threading
 import traceback
 import tkinter as tk
@@ -10,6 +13,9 @@ from tkinter import filedialog, messagebox, scrolledtext, ttk
 from .app import RunOptions, run_collection
 from .models import CollectionResult, SteamReportError
 from .reports import build_markdown
+
+
+PROJECT_DIR = Path(__file__).resolve().parents[1]
 
 
 class App:
@@ -22,7 +28,7 @@ class App:
         self.api_enabled = tk.BooleanVar(value=False)
         self.dark_mode = tk.BooleanVar(value=False)
         self.api_key = tk.StringVar()
-        self.output_dir = tk.StringVar(value=str(Path("output").resolve()))
+        self.output_dir = tk.StringVar(value=str((PROJECT_DIR / "output").resolve()))
         self.delay = tk.DoubleVar(value=1.0)
         self.retries = tk.IntVar(value=3)
         self.status = tk.StringVar(value="Ready.")
@@ -81,7 +87,7 @@ class App:
         self.run_btn.pack(side="left")
         self.cancel_btn = ttk.Button(btns, text="Cancel", command=self.cancel, state="disabled")
         self.cancel_btn.pack(side="left", padx=6)
-        ttk.Button(btns, text="Open Output Folder", command=self._show_output_path).pack(side="left")
+        ttk.Button(btns, text="Open Output Folder", command=self._open_output_folder).pack(side="left")
         ttk.Label(btns, textvariable=self.status).pack(side="left", padx=12)
         self.progress = ttk.Progressbar(btns, mode="indeterminate")
         self.progress.pack(side="right", fill="x", expand=True, padx=8)
@@ -133,8 +139,10 @@ class App:
         if selected:
             self.output_dir.set(selected)
 
-    def _show_output_path(self) -> None:
-        messagebox.showinfo("Output Folder", self.output_dir.get())
+    def _open_output_folder(self) -> None:
+        path = self.last_results[-1].output_dir if self.last_results else Path(self.output_dir.get())
+        path.mkdir(parents=True, exist_ok=True)
+        self._open_path(path, "output folder")
 
     def start(self) -> None:
         targets = [line.strip() for line in self.targets_box.get("1.0", "end").splitlines() if line.strip()]
@@ -208,8 +216,36 @@ class App:
         self._set_text(self.content, self._content_summary(result))
         self._set_text(self.raw, "\n".join(str(r.path) for r in result.evidence) or "No raw evidence files.")
         self._set_text(self.report, build_markdown(result))
-        self.status.set(f"Done. Saved report.md and report.html in {result.output_dir}")
-        messagebox.showinfo("Done", f"Created {len(results)} report set(s).")
+        html_report = result.output_dir / "report.html"
+        markdown_report = result.output_dir / "report.md"
+        created = [path for path in (markdown_report, html_report) if path.exists()]
+        self.status.set(f"Done. Created {len(created)} report file(s) in {result.output_dir}")
+        self._log("Created files:")
+        for path in created:
+            self._log(f"  {path}")
+        if html_report.exists():
+            self._open_path(html_report, "HTML report")
+        else:
+            messagebox.showwarning("Report Missing", f"Expected HTML report was not found:\n{html_report}")
+
+    def _open_path(self, path: Path, label: str) -> None:
+        try:
+            path = path.resolve()
+            if path.is_dir():
+                path.mkdir(parents=True, exist_ok=True)
+            elif not path.exists():
+                raise FileNotFoundError(path)
+
+            if sys.platform.startswith("win"):
+                os.startfile(str(path))  # type: ignore[attr-defined]
+            elif sys.platform == "darwin":
+                subprocess.Popen(["open", str(path)])
+            else:
+                subprocess.Popen(["xdg-open", str(path)])
+            self._log(f"Opened {label}: {path}")
+        except Exception as exc:
+            self._log(f"Could not open {label}: {exc}")
+            messagebox.showerror("Open Failed", f"Could not open {label}:\n{path}\n\n{exc}")
 
     def _finish(self) -> None:
         self.progress.stop()
