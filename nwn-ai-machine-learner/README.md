@@ -20,7 +20,7 @@ The goal is not to let an LLM guess at raw combat logs. The parser remains deter
 start_nwn_ai.bat
 ```
 
-The launcher creates a virtual environment, installs requirements, starts the server, and opens the dashboard.
+The launcher uses the normal system Python, preferably `C:\Python312\python.exe`, installs missing requirements into the current user Python, starts the server, and opens the dashboard. It does not create a virtual environment.
 
 ## Learning Loop
 
@@ -28,4 +28,3 @@ The launcher creates a virtual environment, installs requirements, starts the se
 2. Repeated patterns are grouped by `bucket`.
 3. The learning analyzer writes reviewable candidates to `parser_rule_candidates`.
 4. Approved rules and regression examples become durable parser knowledge.
-

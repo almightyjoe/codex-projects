@@ -1,14 +1,25 @@
 @echo off
 setlocal
+cd /d "%~dp0"
 
 echo ============================================================
 echo  NWN-AI Installer
 echo ============================================================
 
+set "PYTHON_EXE=C:\Python312\python.exe"
+if not exist "%PYTHON_EXE%" (
+    set "PYTHON_EXE=python"
+)
+
 :: --- Python packages ---
 echo.
 echo [1/3] Installing Python packages...
-C:\Python312\python.exe -m pip install -r "%~dp0requirements.txt" --quiet
+"%PYTHON_EXE%" --version
+if %errorlevel% neq 0 (
+    echo ERROR: Python was not found. Install Python or add it to PATH.
+    pause & exit /b 1
+)
+"%PYTHON_EXE%" -m pip install --user -r "%~dp0requirements.txt" --quiet
 if %errorlevel% neq 0 (
     echo ERROR: pip install failed. Check your Python installation.
     pause & exit /b 1
@@ -51,7 +62,7 @@ if not exist "%~dp0data" mkdir "%~dp0data"
 echo.
 echo ============================================================
 echo  Installation complete!
-echo  Run:  C:\Python312\python.exe "%~dp0main.py"
-echo  Then open:  http://127.0.0.1:5000
+echo  Run:  start_nwn_ai.bat
+echo  The browser should open to:  http://127.0.0.1:5000
 echo ============================================================
 pause
