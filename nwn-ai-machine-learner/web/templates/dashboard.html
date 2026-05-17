@@ -42,6 +42,12 @@
   .scope-btn { background: none; border: 1px solid var(--border); color: var(--muted);
                padding: 2px 9px; border-radius: 3px; font-family: inherit; font-size: 0.85em; cursor: pointer; }
   .scope-btn.active { border-color: var(--accent); color: var(--accent); }
+  .svc-btn { background: var(--bg); border: 1px solid var(--border); color: var(--muted);
+             padding: 2px 8px; border-radius: 3px; font-family: inherit; font-size: 0.85em; cursor: pointer; }
+  .svc-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .svc-btn.stop:hover { border-color: var(--red); color: var(--red); }
+  .svc-btn.restart:hover { border-color: var(--yellow); color: var(--yellow); }
+  #service-controls { display: flex; align-items: center; gap: 5px; }
   #settings-btn { background: none; border: 1px solid var(--border); color: var(--muted);
                   padding: 2px 8px; border-radius: 3px; font-family: inherit; font-size: 0.92em; cursor: pointer; }
   #settings-btn:hover { border-color: var(--accent); color: var(--accent); }
@@ -63,6 +69,10 @@
   .setting-row label { color: var(--muted); }
   .setting-row input[type=range] { flex: 1; accent-color: var(--accent); }
   #font-size-val { color: var(--accent); min-width: 34px; text-align: right; }
+  .settings-block { border-top: 1px solid var(--border); padding-top: 10px; margin-top: 10px; }
+  .settings-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
+  .config-line { color: var(--muted); font-size: 0.82em; margin: 3px 0; word-break: break-all; }
+  .config-line strong { color: var(--text); }
 
   /* TABS */
   #tabs { display: flex; background: var(--panel); border-bottom: 2px solid var(--border); flex-shrink: 0; overflow-x: auto; }
@@ -240,6 +250,11 @@
   </div>
   <div id="death-timer-bar"></div>
   <div id="indicator">
+    <div id="service-controls">
+      <button class="svc-btn" onclick="serviceAction('start')" title="Confirm the service is running">Start</button>
+      <button class="svc-btn stop" onclick="serviceAction('stop')" title="Stop this local web service">Stop</button>
+      <button class="svc-btn restart" onclick="serviceAction('restart')" title="Restart this local web service">Restart</button>
+    </div>
     <button id="scope-live" class="scope-btn active" onclick="setScope('live')">Live</button>
     <button id="scope-all"  class="scope-btn"        onclick="setScope('all')">All History</button>
     <span id="live-dot" class="dot"></span><span id="live-label">Waiting</span>
@@ -254,6 +269,21 @@
     <label>Font Size</label>
     <input type="range" id="font-slider" min="11" max="22" step="1" value="13" oninput="applyFontSize(this.value)">
     <span id="font-size-val">13px</span>
+  </div>
+  <div class="settings-block">
+    <h4>Service</h4>
+    <div class="settings-actions">
+      <button class="svc-btn" onclick="serviceAction('start')">Start</button>
+      <button class="svc-btn stop" onclick="serviceAction('stop')">Stop</button>
+      <button class="svc-btn restart" onclick="serviceAction('restart')">Restart</button>
+      <button class="svc-btn" onclick="repairBestiary()">Repair Bestiary</button>
+    </div>
+    <div id="service-status" class="config-line">Loading service status...</div>
+    <div id="bestiary-status" class="config-line"></div>
+  </div>
+  <div class="settings-block">
+    <h4>Paths</h4>
+    <div id="config-paths"></div>
   </div>
 </div>
 
@@ -1140,6 +1170,62 @@ function renderMob(r) {
 }
 
 // ════════════════════════════════════════════════════════════════
+// SERVICE / CONFIG
+// ════════════════════════════════════════════════════════════════
+async function loadServiceStatus() {
+  try {
+    const s = await (await fetch('/api/service/status')).json();
+    const b = s.bestiary || {};
+    const svc = document.getElementById('service-status');
+    const bst = document.getElementById('bestiary-status');
+    const paths = document.getElementById('config-paths');
+    if (svc) svc.innerHTML = `<strong>Running</strong> PID ${s.pid} on port ${s.port}`;
+    if (bst) bst.innerHTML = `<strong>Bestiary</strong> ${b.creatures ?? '?'} creatures, ${b.areas ?? '?'} areas, ${b.links ?? '?'} links`;
+    if (paths) paths.innerHTML = [
+      ['NWN logs', s.nwn_log_dir],
+      ['HGXLE', s.hgx_dir],
+      ['Combat DB', s.combat_db],
+      ['Bestiary DB', s.bestiary_db],
+      ['Creatures JSON', s.creatures_json],
+      ['Python', s.python],
+    ].map(([k,v]) => `<div class="config-line"><strong>${esc(k)}:</strong> ${esc(v || '')}</div>`).join('');
+  } catch (e) {
+    const svc = document.getElementById('service-status');
+    if (svc) svc.textContent = 'Service status unavailable.';
+  }
+}
+
+async function serviceAction(action) {
+  const labels = { start:'Start', stop:'Stop', restart:'Restart' };
+  if ((action === 'stop' || action === 'restart') && !confirm(`${labels[action]} NWN-AI service?`)) return;
+  try {
+    const r = await fetch('/api/service/' + action, { method: 'POST' });
+    const d = await r.json();
+    setLive(action === 'stop' ? false : true);
+    const svc = document.getElementById('service-status');
+    if (svc) svc.innerHTML = `<strong>${esc(labels[action])}:</strong> ${esc(d.message || 'ok')}`;
+    if (action === 'restart') setTimeout(() => location.reload(), 4500);
+  } catch (e) {
+    alert('Service command failed: ' + e);
+  }
+}
+
+async function repairBestiary() {
+  const bst = document.getElementById('bestiary-status');
+  if (bst) bst.textContent = 'Repairing bestiary...';
+  try {
+    const r = await fetch('/api/bestiary/repair', { method: 'POST' });
+    const d = await r.json();
+    const b = d.bestiary || {};
+    if (bst) bst.innerHTML = `<strong>Bestiary</strong> ${b.creatures ?? '?'} creatures, ${b.areas ?? '?'} areas, ${b.links ?? '?'} links ${d.changed ? '(repaired)' : '(already current)'}`;
+    _allCreatures = [];
+    if (document.querySelector('.tab.active')?.dataset.tab === 'bestiary') loadCreatureList();
+  } catch (e) {
+    if (bst) bst.textContent = 'Bestiary repair failed: ' + e;
+  }
+}
+
+// ════════════════════════════════════════════════════════════════
 // AI QUERY
 // ════════════════════════════════════════════════════════════════
 async function checkOllama() {
@@ -1181,6 +1267,7 @@ function applyFontSize(px) {
 }
 function toggleSettings() {
   document.getElementById('settings-panel').classList.toggle('open');
+  loadServiceStatus();
 }
 document.addEventListener('click', e => {
   const p = document.getElementById('settings-panel');
@@ -1190,6 +1277,7 @@ document.addEventListener('click', e => {
 function initSettings() {
   const saved = localStorage.getItem('nwnai_font_size');
   if (saved) { document.getElementById('font-slider').value = saved; applyFontSize(saved); }
+  loadServiceStatus();
 }
 
 // ════════════════════════════════════════════════════════════════

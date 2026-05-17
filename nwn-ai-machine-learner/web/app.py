@@ -2,7 +2,7 @@
 Flask + SocketIO web server.
 Serves the dashboard and handles AI query API calls.
 """
-import os, sys
+import os, sys, threading, subprocess, sqlite3
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from flask import Flask, render_template, request, jsonify
@@ -19,10 +19,40 @@ from query.sql_queries import (
 )
 from query.ai_query import ask, ollama_status
 from parser.learning import analyze_unparsed
+from config import BESTIARY_DB, COMBAT_DB, CREATURES_JSON, HGX_DIR, NWN_LOG_DIR, WEB_PORT
 
 app = Flask(__name__, template_folder='templates', static_folder='static')
 app.config['SECRET_KEY'] = 'nwnai-secret'
 socketio = SocketIO(app, cors_allowed_origins='*', async_mode='eventlet')
+BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+
+
+def _delayed_exit():
+    os._exit(0)
+
+
+def _bestiary_counts():
+    conn = sqlite3.connect(BESTIARY_DB)
+    conn.row_factory = sqlite3.Row
+    row = conn.execute(
+        '''
+        SELECT
+          (SELECT COUNT(*) FROM creatures) AS creatures,
+          (SELECT COUNT(*) FROM areas) AS areas,
+          (SELECT COUNT(*) FROM creature_areas) AS links
+        '''
+    ).fetchone()
+    conn.close()
+    return dict(row)
+
+
+def _spawn_restart():
+    python_exe = sys.executable
+    cmd = f'timeout /t 2 /nobreak >nul & "{python_exe}" main.py'
+    flags = 0
+    if os.name == 'nt':
+        flags = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS
+    subprocess.Popen(['cmd', '/c', cmd], cwd=BASE_DIR, creationflags=flags)
 
 
 # ---------------------------------------------------------------------------
@@ -90,6 +120,49 @@ def api_accuracy():
 @app.route('/api/sessions')
 def api_sessions():
     return jsonify(session_list())
+
+
+@app.route('/api/service/status')
+def api_service_status():
+    try:
+        bestiary = _bestiary_counts()
+    except Exception as e:
+        bestiary = {'error': str(e)}
+    return jsonify({
+        'running': True,
+        'pid': os.getpid(),
+        'python': sys.executable,
+        'port': WEB_PORT,
+        'base_dir': BASE_DIR,
+        'combat_db': COMBAT_DB,
+        'bestiary_db': BESTIARY_DB,
+        'creatures_json': CREATURES_JSON,
+        'nwn_log_dir': NWN_LOG_DIR,
+        'hgx_dir': HGX_DIR,
+        'bestiary': bestiary,
+    })
+
+
+@app.route('/api/service/start', methods=['POST'])
+def api_service_start():
+    return jsonify({
+        'ok': True,
+        'message': 'NWN-AI is already running. Use restart to relaunch it.',
+        'pid': os.getpid(),
+    })
+
+
+@app.route('/api/service/stop', methods=['POST'])
+def api_service_stop():
+    threading.Timer(0.8, _delayed_exit).start()
+    return jsonify({'ok': True, 'message': 'Stopping NWN-AI server.'})
+
+
+@app.route('/api/service/restart', methods=['POST'])
+def api_service_restart():
+    _spawn_restart()
+    threading.Timer(0.8, _delayed_exit).start()
+    return jsonify({'ok': True, 'message': 'Restarting NWN-AI server.'})
 
 
 # ---------------------------------------------------------------------------
@@ -165,6 +238,21 @@ def api_search():
 @app.route('/api/creatures')
 def api_creatures():
     return jsonify(creature_list())
+
+
+@app.route('/api/bestiary/status')
+def api_bestiary_status():
+    return jsonify(_bestiary_counts())
+
+
+@app.route('/api/bestiary/repair', methods=['POST'])
+def api_bestiary_repair():
+    try:
+        from repair_data import seed_legacy_bestiary_if_better
+        changed = seed_legacy_bestiary_if_better()
+        return jsonify({'ok': True, 'changed': changed, 'bestiary': _bestiary_counts()})
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e), 'bestiary': _bestiary_counts()}), 500
 
 
 @app.route('/api/spells')

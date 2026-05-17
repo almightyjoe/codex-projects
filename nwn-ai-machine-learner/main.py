@@ -22,14 +22,24 @@ def main():
     import sqlite3
     conn = sqlite3.connect(BESTIARY_DB)
     count = conn.execute('SELECT COUNT(*) FROM creatures').fetchone()[0]
+    area_count = conn.execute('SELECT COUNT(*) FROM areas').fetchone()[0]
     conn.close()
 
     if count == 0:
         print(f'  Importing creatures_data.json...')
         from bestiary.import_creatures import import_creatures
         import_creatures()
+    elif area_count == 0:
+        try:
+            from repair_data import seed_legacy_bestiary_if_better
+            if seed_legacy_bestiary_if_better():
+                print('  Seeded richer legacy bestiary with area links')
+            else:
+                print(f'  {count} creatures found, but no area links are available')
+        except Exception as e:
+            print(f'  WARN bestiary repair skipped: {e}')
     else:
-        print(f'  {count} creatures already in bestiary.db')
+        print(f'  {count} creatures and {area_count} areas already in bestiary.db')
 
     # --- 3. Start log parser threads ---
     print('\n[3/4] Starting log parser...')
