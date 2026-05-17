@@ -218,15 +218,23 @@
 <!-- TOP BAR -->
 <div id="topbar">
   <h1>⚔ NWN AI</h1>
-  <div class="stat-pill" id="pill-dmg-in"><div class="label">DMG IN</div><div class="val" id="stat-dmg-in">—</div></div>
-  <div class="stat-pill" id="pill-dmg-out"><div class="label">DMG OUT</div><div class="val" id="stat-dmg-out">—</div></div>
-  <div class="stat-pill pill-dead" id="pill-deaths">
-    <div class="label">PC DEATHS</div>
-    <div class="val dead" id="stat-deaths">—</div>
-    <div class="label" id="stat-killer" style="font-size:0.77em;color:var(--yellow);max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></div>
+  <div class="stat-pill" id="pill-dmg-in">
+    <div class="label">DMG IN</div>
+    <div class="val" id="stat-dmg-in">—</div>
+    <div class="label" id="stat-dmg-in-type" style="font-size:0.77em;color:var(--yellow);max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></div>
+  </div>
+  <div class="stat-pill pill-warn" id="pill-top-dmg">
+    <div class="label">TOP TYPE</div>
+    <div class="val warn" id="stat-top-dmg">—</div>
+    <div class="label" id="stat-top-dmg-share" style="font-size:0.77em;color:var(--yellow);"></div>
+  </div>
+  <div class="stat-pill pill-dead" id="pill-active-death">
+    <div class="label">ACTIVE DEATH</div>
+    <div class="val dead" id="stat-active-death">0</div>
+    <div class="label" id="stat-death-detail" style="font-size:0.77em;color:var(--yellow);max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></div>
   </div>
   <div class="stat-pill" id="pill-saves">
-    <div class="label">SAVE FAILS</div>
+    <div class="label">SAVE PRESSURE</div>
     <div class="val warn" id="stat-saves">—</div>
     <div class="label" id="stat-top-save" style="font-size:0.77em;color:var(--yellow);"></div>
   </div>
@@ -518,10 +526,14 @@ function renderDeathTimers() {
   const entries = Object.entries(_deathTimers);
   const bar   = document.getElementById('death-timer-bar');
   const panel = document.getElementById('death-panel');
+  const activeVal = document.getElementById('stat-active-death');
+  const activeDetail = document.getElementById('stat-death-detail');
 
   if (!entries.length) {
     if (bar)   bar.innerHTML = '';
     if (panel) panel.innerHTML = '<span style="color:var(--muted);font-size:0.85em">No deaths this session.</span>';
+    if (activeVal) activeVal.textContent = '0';
+    if (activeDetail) activeDetail.textContent = 'none';
     return;
   }
 
@@ -542,6 +554,11 @@ function renderDeathTimers() {
          <span class="dp-timer" style="color:${r.col}">${r.label}</span>
        </div>`
     ).join('');
+  }
+  if (activeVal) activeVal.textContent = String(rows.length);
+  if (activeDetail) {
+    const urgent = [...rows].sort((a,b) => a.secs - b.secs)[0];
+    activeDetail.textContent = `${urgent.name} ${urgent.label}`;
   }
   if (panel) {
     panel.innerHTML = rows.map(r => {
@@ -665,13 +682,19 @@ async function refreshSnapshot() {
   const url = '/api/snapshot' + qs();
   const d = await (await fetch(url)).json();
   document.getElementById('stat-dmg-in').textContent  = fmtNum(d.damage_received);
-  document.getElementById('stat-dmg-out').textContent = fmtNum(d.damage_dealt);
-  document.getElementById('stat-deaths').textContent  = d.pc_deaths;
-  document.getElementById('stat-saves').textContent   = d.save_failures;
-  const kEl = document.getElementById('stat-killer');
-  if (kEl) kEl.textContent = d.last_killer ? ('by ' + d.last_killer) : '';
+  const topType = d.top_damage_type || 'none';
+  const topAmt = d.top_damage_type_amount || 0;
+  const topPct = d.top_damage_type_pct || 0;
+  document.getElementById('stat-dmg-in-type').textContent = topType !== 'none' ? `${topType} leads` : '';
+  document.getElementById('stat-top-dmg').textContent = fmtNum(topAmt);
+  document.getElementById('stat-top-dmg-share').textContent = topType !== 'none' ? `${topType} ${topPct}%` : 'none';
+  document.getElementById('stat-saves').textContent   = d.top_fail_save_count || d.save_failures || 0;
   const sEl = document.getElementById('stat-top-save');
-  if (sEl) sEl.textContent = d.top_fail_save ? d.top_fail_save : '';
+  if (sEl) {
+    const dc = d.top_fail_save_dc ? ` DC ${d.top_fail_save_dc}` : '';
+    sEl.textContent = d.top_fail_save ? `${d.top_fail_save}${dc}` : 'none';
+  }
+  renderDeathTimers();
 }
 
 // ════════════════════════════════════════════════════════════════

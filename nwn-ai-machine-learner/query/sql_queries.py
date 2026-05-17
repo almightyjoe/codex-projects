@@ -493,6 +493,23 @@ def stat_snapshot(session_id=None) -> dict:
         f"SELECT COUNT(*) FROM saves WHERE target_is_pc=1 AND result IN ('failure','automatic failure') {sid}"
     ).fetchone()[0]
 
+    dmg_type_select = ', '.join(
+        f'COALESCE(SUM({col}),0) AS "{name}"'
+        for name, col in _ALL_DMG_TYPES
+        if name != 'Other'
+    )
+    dmg_type_row = conn.execute(
+        f'SELECT {dmg_type_select} FROM damages WHERE defender_is_pc=1 {sid}'
+    ).fetchone()
+    top_dmg_type = None
+    top_dmg_amount = 0
+    if dmg_type_row:
+        for key in dmg_type_row.keys():
+            amount = dmg_type_row[key] or 0
+            if amount > top_dmg_amount:
+                top_dmg_type = key
+                top_dmg_amount = amount
+
     spells_cast = conn.execute(
         f"SELECT COUNT(*) FROM spells WHERE caster_is_pc=1 {sid}"
     ).fetchone()[0]
@@ -505,14 +522,17 @@ def stat_snapshot(session_id=None) -> dict:
         f"SELECT killer FROM kills WHERE victim_is_pc=1 {sid} ORDER BY id DESC LIMIT 1"
     ).fetchone()
     top_fail_save = conn.execute(
-        f"SELECT save_type, COUNT(*) as n FROM saves WHERE target_is_pc=1 {sid} "
-        f"AND result IN ('failure','automatic failure') GROUP BY save_type ORDER BY n DESC LIMIT 1"
+        f"SELECT save_type, COUNT(*) as n, MAX(dc) as max_dc FROM saves WHERE target_is_pc=1 {sid} "
+        f"AND result IN ('failure','automatic failure') GROUP BY save_type ORDER BY n DESC, max_dc DESC LIMIT 1"
     ).fetchone()
 
     conn.close()
     return {
         'damage_received':  total_dmg_in,
         'damage_dealt':     total_dmg_out,
+        'top_damage_type':   top_dmg_type,
+        'top_damage_type_amount': top_dmg_amount,
+        'top_damage_type_pct': round(100.0 * top_dmg_amount / total_dmg_in, 1) if total_dmg_in else 0,
         'pc_deaths':        pc_deaths,
         'mob_kills':        mob_kills,
         'attacks_received': total_attacks_in,
@@ -520,7 +540,9 @@ def stat_snapshot(session_id=None) -> dict:
         'spells_cast':      spells_cast,
         'songs_sung':       songs_sung,
         'last_killer':      last_killer[0] if last_killer else None,
-        'top_fail_save':    top_fail_save[0] if top_fail_save else None,
+        'top_fail_save':    top_fail_save['save_type'] if top_fail_save else None,
+        'top_fail_save_count': top_fail_save['n'] if top_fail_save else 0,
+        'top_fail_save_dc': top_fail_save['max_dc'] if top_fail_save else None,
     }
 
 
