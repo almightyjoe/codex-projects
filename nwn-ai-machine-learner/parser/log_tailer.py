@@ -54,6 +54,22 @@ class LogTailer(threading.Thread):
             return None
         return sorted(candidates, reverse=True)[0][1]
 
+    def _remember_current_pc_candidate(self, name: str, source: str):
+        """Use strong PC identity lines to attach later immunity blocks to a PC."""
+        if source in {'welcome', 'player_detected'} and name:
+            self._current_pc = name
+
+    def _infer_current_pc_from_log(self, path: str):
+        """Pre-scan the current log so replayed early immunity blocks are named."""
+        try:
+            with open(path, 'r', encoding='cp1252', errors='replace') as fh:
+                for raw in fh:
+                    ev = parse_line(raw.rstrip('\r\n'))
+                    if ev and ev.get('type') == 'pc_detected' and ev.get('is_current_pc'):
+                        self._current_pc = ev.get('name', self._current_pc)
+        except OSError:
+            pass
+
     def _read_new_lines(self, path: str) -> list[str]:
         size = os.path.getsize(path)
         pos  = self._file_pos.get(path, 0)
@@ -242,7 +258,9 @@ class LogTailer(threading.Thread):
 
             if path != last_path:
                 print(f'[LogTailer] watching {os.path.basename(path)}')
-                self._file_pos[path] = os.path.getsize(path)
+                print('[LogTailer] replaying current log for restart context')
+                self._infer_current_pc_from_log(path)
+                self._file_pos[path] = 0
                 last_path = path
 
             for raw in self._read_new_lines(path):
@@ -285,6 +303,7 @@ class LogTailer(threading.Thread):
                 if ev['type'] == 'pc_detected':
                     if ev.get('is_current_pc'):
                         self._current_pc = ev['name']
+                    self._remember_current_pc_candidate(ev['name'], ev.get('channel', ''))
                     self._register_pc(
                         ev['name'], ev['channel'], ev['ts'],
                         ev.get('is_current_pc', 0),

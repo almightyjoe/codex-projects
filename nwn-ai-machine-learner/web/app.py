@@ -182,6 +182,11 @@ def api_pc_status():
     if sid:
         where = 'AND session_id=?'
         params.append(int(sid))
+    named_count = conn.execute(
+        f"SELECT COUNT(*) FROM pc_status WHERE COALESCE(pc_name, 'Unknown PC')<>'Unknown PC' {where}",
+        params,
+    ).fetchone()[0]
+    status_filter = "AND COALESCE(pc_name, 'Unknown PC')<>'Unknown PC'" if named_count else ""
     rows = conn.execute(
         f'''
         SELECT ps.*
@@ -189,7 +194,7 @@ def api_pc_status():
         JOIN (
           SELECT pc_name, MAX(id) AS id
           FROM pc_status
-          WHERE 1 {where}
+          WHERE 1 {where} {status_filter}
           GROUP BY pc_name
         ) latest ON latest.id=ps.id
         ORDER BY ps.pc_name

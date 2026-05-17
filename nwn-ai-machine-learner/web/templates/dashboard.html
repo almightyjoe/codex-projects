@@ -717,8 +717,7 @@ async function refreshSnapshot() {
   const topType = d.top_damage_type || 'none';
   const topAmt = d.top_damage_type_amount || 0;
   const topPct = d.top_damage_type_pct || 0;
-  const unsplit = d.unsplit_physical || 0;
-  document.getElementById('stat-dmg-in-type').textContent = unsplit ? `unsplit physical ${fmtNum(unsplit)}` : (topType !== 'none' ? `${topType} leads` : '');
+  document.getElementById('stat-dmg-in-type').textContent = topType !== 'none' ? `${topType} leads` : '';
   document.getElementById('stat-top-dmg').textContent = fmtNum(topAmt);
   document.getElementById('stat-top-dmg-share').textContent = topType !== 'none' ? `${topType} ${topPct}%` : 'none';
   document.getElementById('stat-saves').textContent   = d.top_fail_save_count || d.save_failures || 0;

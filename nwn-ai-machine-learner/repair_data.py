@@ -130,6 +130,74 @@ def backfill_death_averts() -> int:
     return inserted
 
 
+def backfill_pc_status_names() -> int:
+    """Attach old Unknown PC immunity snapshots to the current PC seen in the log."""
+    init_all()
+    current_pc = ""
+    last_current_pc = ""
+    updates = []
+    for raw in _chat_lines():
+        ev = parse_line(raw)
+        if not ev:
+            continue
+        if ev.get("type") == "pc_detected" and ev.get("is_current_pc"):
+            current_pc = ev.get("name", "")
+            last_current_pc = current_pc or last_current_pc
+            continue
+        if ev.get("type") == "immunity_block_start" and current_pc:
+            updates.append((current_pc, ev["ts"]))
+
+    if not updates:
+        return 0
+    conn = sqlite3.connect(COMBAT_DB)
+    changed = 0
+    for pc_name, ts in updates:
+        cur = conn.execute(
+            "UPDATE pc_status SET pc_name=? WHERE ts=? AND COALESCE(pc_name, 'Unknown PC')='Unknown PC'",
+            (pc_name, ts),
+        )
+        changed += cur.rowcount if cur.rowcount and cur.rowcount > 0 else 0
+    if last_current_pc:
+        cur = conn.execute(
+            "UPDATE pc_status SET pc_name=? WHERE COALESCE(pc_name, 'Unknown PC')='Unknown PC'",
+            (last_current_pc,),
+        )
+        changed += cur.rowcount if cur.rowcount and cur.rowcount > 0 else 0
+    conn.commit()
+    conn.close()
+    return changed
+
+
+def backfill_debuff_alert_names() -> int:
+    """Keep alert ownership aligned with repaired immunity snapshot ownership."""
+    init_all()
+    conn = sqlite3.connect(COMBAT_DB)
+    cur = conn.execute(
+        """
+        UPDATE debuff_alerts
+        SET pc_name=(
+            SELECT ps.pc_name
+            FROM pc_status ps
+            WHERE ps.ts=debuff_alerts.ts
+              AND COALESCE(ps.pc_name, 'Unknown PC')<>'Unknown PC'
+            ORDER BY ps.id DESC
+            LIMIT 1
+        )
+        WHERE COALESCE(pc_name, 'Unknown PC')='Unknown PC'
+          AND EXISTS (
+            SELECT 1
+            FROM pc_status ps
+            WHERE ps.ts=debuff_alerts.ts
+              AND COALESCE(ps.pc_name, 'Unknown PC')<>'Unknown PC'
+          )
+        """
+    )
+    changed = cur.rowcount if cur.rowcount and cur.rowcount > 0 else 0
+    conn.commit()
+    conn.close()
+    return changed
+
+
 def seed_legacy_bestiary_if_better() -> bool:
     if not os.path.isfile(LEGACY_BESTIARY_DB):
         return False
@@ -158,7 +226,11 @@ def seed_legacy_bestiary_if_better() -> bool:
 if __name__ == "__main__":
     pcs = repair_combat_flags()
     averted = backfill_death_averts()
+    status_names = backfill_pc_status_names()
+    alert_names = backfill_debuff_alert_names()
     copied = seed_legacy_bestiary_if_better()
     print(f"PCs tagged: {', '.join(sorted(pcs)) if pcs else '(none)'}")
     print(f"Averted deaths backfilled: {averted}")
+    print(f"PC status names backfilled: {status_names}")
+    print(f"Debuff alert names backfilled: {alert_names}")
     print(f"Legacy bestiary seeded: {copied}")
