@@ -22,6 +22,7 @@ _DMG_TYPE_MAP = {
     'bludgeoning':   'dmg_bludgeoning',
     'piercing':      'dmg_piercing',
     'slashing':      'dmg_slashing',
+    'physical':      'dmg_physical',
     # elemental
     'acid':          'dmg_acid',
     'cold':          'dmg_cold',
@@ -32,8 +33,10 @@ _DMG_TYPE_MAP = {
     'divine':        'dmg_divine',
     'magical':       'dmg_magical',
     'negative energy': 'dmg_negative',
+    'negativeenergy': 'dmg_negative',
     'negative':      'dmg_negative',
     'positive energy': 'dmg_positive',
+    'positiveenergy': 'dmg_positive',
     'positive':      'dmg_positive',
     # exotic
     'psionic':       'dmg_psionic',
@@ -67,6 +70,7 @@ _DMG_TYPE_MAP = {
 # Canonical ordered list of all damage DB columns (used for INSERT ordering)
 DMG_COLS = [
     'dmg_bludgeoning', 'dmg_piercing',   'dmg_slashing',
+    'dmg_physical',
     'dmg_acid',        'dmg_cold',        'dmg_electrical',
     'dmg_fire',        'dmg_sonic',       'dmg_divine',
     'dmg_magical',     'dmg_negative',    'dmg_positive',
@@ -168,6 +172,8 @@ _CHAT   = re.compile(r'^(?P<name>.+?) : \[(?P<channel>Party|Shout|Tell|Talk|Whis
 _LOGIN  = re.compile(r'^(?P<name>.+?) has joined as a player\.\.?$')
 _PARTY_JOIN = re.compile(r'^(?P<name>.+?) has joined the party\.$')
 _WELCOME = re.compile(r'^Welcome to Higher Ground, (?P<name>.+?)!$')
+_PLAYER_DETECTED = re.compile(r'^Player detected: (?P<name>.+?)$')
+_PARTY_STATUS = re.compile(r'^Party: (?P<name>.+?) \[Level \d+\]')
 _SPELL  = re.compile(r'^(?P<caster>.+?) (?P<action>casting|casts) (?P<spell>.+)$')
 _SINGS  = re.compile(r'^(?P<caster>.+?) sings\.$')
 _RESURRECT = re.compile(
@@ -261,6 +267,18 @@ def parse_line(raw_line: str) -> dict | None:
         return {'type': 'pc_detected', 'ts': ts,
                 'name': mw.group('name').strip(),
                 'channel': 'welcome', 'is_current_pc': 1}
+
+    md = _PLAYER_DETECTED.match(content)
+    if md:
+        return {'type': 'pc_detected', 'ts': ts,
+                'name': md.group('name').strip(),
+                'channel': 'player_detected', 'is_current_pc': 1}
+
+    mps = _PARTY_STATUS.match(content)
+    if mps:
+        return {'type': 'pc_detected', 'ts': ts,
+                'name': mps.group('name').strip(),
+                'channel': 'party_status', 'is_current_pc': 0}
 
     ml = _LOGIN.match(content)
     if ml:

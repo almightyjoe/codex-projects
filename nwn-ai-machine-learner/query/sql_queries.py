@@ -4,10 +4,11 @@ All structured question handlers — answered purely from SQLite without any LLM
 import sqlite3
 from config import COMBAT_DB, BESTIARY_DB
 
-# All damage columns tracked in the damages table (physical split into B/P/S)
+# All damage columns tracked in the damages table.
 _ALL_DMG_TYPES = [
     ('Bludgeoning', 'dmg_bludgeoning'), ('Piercing',   'dmg_piercing'),
-    ('Slashing',    'dmg_slashing'),    ('Acid',        'dmg_acid'),
+    ('Slashing',    'dmg_slashing'),    ('Physical',    'dmg_physical'),
+    ('Acid',        'dmg_acid'),
     ('Cold',        'dmg_cold'),        ('Electrical',  'dmg_electrical'),
     ('Fire',        'dmg_fire'),        ('Sonic',       'dmg_sonic'),
     ('Divine',      'dmg_divine'),      ('Magical',     'dmg_magical'),
@@ -529,7 +530,7 @@ def stat_snapshot(session_id=None) -> dict:
 
 # All 35 damage columns for dynamic SELECT building
 _ALL_DMG_COLS = [
-    'dmg_bludgeoning','dmg_piercing','dmg_slashing',
+    'dmg_bludgeoning','dmg_piercing','dmg_slashing','dmg_physical',
     'dmg_acid','dmg_cold','dmg_electrical','dmg_fire','dmg_sonic',
     'dmg_divine','dmg_magical','dmg_negative','dmg_positive',
     'dmg_psionic','dmg_vile','dmg_sacred','dmg_force',

@@ -1,12 +1,13 @@
 __pycache__/
 *.py[cod]
 *.db
+*.db.before-*
 *.db-shm
 *.db-wal
 .venv/
 venv/
 data/*.db
+data/*.db.before-*
 data/*.db-shm
 data/*.db-wal
 *.log
-

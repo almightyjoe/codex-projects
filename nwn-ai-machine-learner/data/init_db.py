@@ -45,6 +45,7 @@ CREATE TABLE IF NOT EXISTS damages (
     dmg_bludgeoning INTEGER DEFAULT 0,
     dmg_piercing    INTEGER DEFAULT 0,
     dmg_slashing    INTEGER DEFAULT 0,
+    dmg_physical    INTEGER DEFAULT 0,
     -- Elemental
     dmg_acid        INTEGER DEFAULT 0,
     dmg_cold        INTEGER DEFAULT 0,
@@ -376,6 +377,7 @@ def _migrate_combat(conn):
     existing_dmg = {r[1] for r in conn.execute("PRAGMA table_info(damages)")}
     new_dmg = [
         'dmg_bludgeoning','dmg_piercing','dmg_slashing',
+        'dmg_physical',
         'dmg_ectoplasmic','dmg_internal','dmg_anarchic','dmg_axiomatic',
         'dmg_primal','dmg_subdual','dmg_desiccation','dmg_venom',
         'dmg_raw_arcane','dmg_raw_divine','dmg_raw_nature',
