@@ -505,10 +505,6 @@ def stat_snapshot(session_id=None) -> dict:
     total_dmg_out = conn.execute(
         f'SELECT COALESCE(SUM(total_damage),0) FROM damages WHERE attacker_is_pc=1 {sid}'
     ).fetchone()[0]
-    unsplit_physical = conn.execute(
-        f'SELECT COALESCE(SUM(dmg_physical),0) FROM damages WHERE defender_is_pc=1 {sid}'
-    ).fetchone()[0]
-
     pc_deaths = conn.execute(
         f'SELECT COUNT(*) FROM kills WHERE victim_is_pc=1 {sid}'
     ).fetchone()[0]
@@ -568,7 +564,6 @@ def stat_snapshot(session_id=None) -> dict:
         'top_damage_type':   top_dmg_type,
         'top_damage_type_amount': top_dmg_amount,
         'top_damage_type_pct': round(100.0 * top_dmg_amount / total_dmg_in, 1) if total_dmg_in else 0,
-        'unsplit_physical':  unsplit_physical,
         'pc_deaths':        pc_deaths,
         'averted_deaths':   averted_deaths,
         'mob_kills':        mob_kills,
@@ -589,7 +584,7 @@ def stat_snapshot(session_id=None) -> dict:
 
 # All 35 damage columns for dynamic SELECT building
 _ALL_DMG_COLS = [
-    'dmg_bludgeoning','dmg_piercing','dmg_slashing','dmg_physical',
+    'dmg_bludgeoning','dmg_piercing','dmg_slashing',
     'dmg_acid','dmg_cold','dmg_electrical','dmg_fire','dmg_sonic',
     'dmg_divine','dmg_magical','dmg_negative','dmg_positive',
     'dmg_psionic','dmg_vile','dmg_sacred','dmg_force',

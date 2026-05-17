@@ -41,7 +41,7 @@ CREATE TABLE IF NOT EXISTS damages (
     attacker        TEXT,
     defender        TEXT,
     total_damage    INTEGER,
-    -- Physical subtypes. dmg_physical means the log did not split B/P/S.
+    -- Physical subtypes. Raw "Physical" log damage is split into B/P/S by parser policy.
     dmg_bludgeoning INTEGER DEFAULT 0,
     dmg_piercing    INTEGER DEFAULT 0,
     dmg_slashing    INTEGER DEFAULT 0,

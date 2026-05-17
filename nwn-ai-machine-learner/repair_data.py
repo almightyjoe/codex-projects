@@ -198,6 +198,34 @@ def backfill_debuff_alert_names() -> int:
     return changed
 
 
+def split_physical_damage_bucket() -> int:
+    """Move legacy raw Physical amounts into Bludgeoning/Piercing/Slashing."""
+    init_all()
+    conn = sqlite3.connect(COMBAT_DB)
+    rows = conn.execute(
+        "SELECT id, dmg_physical FROM damages WHERE COALESCE(dmg_physical, 0) > 0"
+    ).fetchall()
+    for row_id, amount in rows:
+        base, rem = divmod(int(amount), 3)
+        bludgeoning = base + (1 if rem > 0 else 0)
+        piercing = base + (1 if rem > 1 else 0)
+        slashing = base
+        conn.execute(
+            """
+            UPDATE damages
+            SET dmg_bludgeoning=COALESCE(dmg_bludgeoning,0)+?,
+                dmg_piercing=COALESCE(dmg_piercing,0)+?,
+                dmg_slashing=COALESCE(dmg_slashing,0)+?,
+                dmg_physical=0
+            WHERE id=?
+            """,
+            (bludgeoning, piercing, slashing, row_id),
+        )
+    conn.commit()
+    conn.close()
+    return len(rows)
+
+
 def seed_legacy_bestiary_if_better() -> bool:
     if not os.path.isfile(LEGACY_BESTIARY_DB):
         return False
@@ -228,9 +256,11 @@ if __name__ == "__main__":
     averted = backfill_death_averts()
     status_names = backfill_pc_status_names()
     alert_names = backfill_debuff_alert_names()
+    split_rows = split_physical_damage_bucket()
     copied = seed_legacy_bestiary_if_better()
     print(f"PCs tagged: {', '.join(sorted(pcs)) if pcs else '(none)'}")
     print(f"Averted deaths backfilled: {averted}")
     print(f"PC status names backfilled: {status_names}")
     print(f"Debuff alert names backfilled: {alert_names}")
+    print(f"Physical damage rows split: {split_rows}")
     print(f"Legacy bestiary seeded: {copied}")

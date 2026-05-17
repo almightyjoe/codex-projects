@@ -750,7 +750,6 @@ async function refreshDamage() {
     }
   }
   const drOut = Object.entries(typeOut)
-    .filter(([k]) => k !== 'dmg_physical')
     .map(([k,v]) => ({ type: k.replace('dmg_','').replace(/_/g,' '), total: v }))
     .filter(x => x.total > 0)
     .sort((a,b) => b.total - a.total)
@@ -818,7 +817,7 @@ function renderDmgBreakdown(rows) {
 
   const thead = document.querySelector('#dmg-breakdown-table thead');
   const tbody = document.querySelector('#dmg-breakdown-table tbody');
-  const label = col => col === 'dmg_physical' ? 'physical (unsplit)' : col.replace('dmg_','').replace(/_/g,' ');
+  const label = col => col.replace('dmg_','').replace(/_/g,' ');
 
   thead.innerHTML = '<tr>' +
     '<th>Name</th><th class="num">Total</th><th class="num">Hits</th>' +

@@ -18,11 +18,9 @@ _LOG_LINE = re.compile(
 # Maps log text (lower) → DB column name
 # ---------------------------------------------------------------------------
 _DMG_TYPE_MAP = {
-    # physical subtypes. If the log only says "Physical", keep it as uncertainty.
     'bludgeoning':   'dmg_bludgeoning',
     'piercing':      'dmg_piercing',
     'slashing':      'dmg_slashing',
-    'physical':      'dmg_physical',
     # elemental
     'acid':          'dmg_acid',
     'cold':          'dmg_cold',
@@ -214,6 +212,12 @@ def _parse_damage_breakdown(raw: str) -> dict:
     for m in _DMG_PART.finditer(raw):
         amt  = int(m.group(1))
         kind = m.group(2).strip().lower()
+        if kind == 'physical':
+            base, rem = divmod(amt, 3)
+            result['dmg_bludgeoning'] += base + (1 if rem > 0 else 0)
+            result['dmg_piercing'] += base + (1 if rem > 1 else 0)
+            result['dmg_slashing'] += base
+            continue
         col  = _DMG_TYPE_MAP.get(kind, 'dmg_other')
         result[col] = result.get(col, 0) + amt
     return result
