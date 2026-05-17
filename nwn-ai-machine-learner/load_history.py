@@ -25,7 +25,13 @@ def discover_pcs_from_logs() -> set[str]:
         ev = parse_line(raw)
         if ev and ev.get('type') == 'pc_detected':
             pcs.add(ev['name'])
+        if ev and ev.get('type') == 'death_averted':
+            pcs.add(ev['target'])
     return {p for p in pcs if p}
+
+
+def is_pc_name(name: str, pc_set: set[str]) -> bool:
+    return bool(name and (name in pc_set or name.strip(' .') in pc_set))
 
 
 def reset_combat_db():
@@ -71,15 +77,17 @@ def load_all_logs(reset: bool = False):
                     if ev.get('type') == 'pc_detected':
                         pc_set.add(ev['name'])
                         continue
+                    if ev.get('type') == 'death_averted':
+                        pc_set.add(ev['target'])
                     if ev.get('type') == 'account_detected':
                         continue
                     parsed += 1
-                    ev['attacker_is_pc'] = int(ev.get('attacker','') in pc_set)
-                    ev['defender_is_pc'] = int(ev.get('defender','') in pc_set)
-                    ev['target_is_pc']   = int(ev.get('target',  '') in pc_set)
-                    ev['killer_is_pc']   = int(ev.get('killer',  '') in pc_set)
-                    ev['victim_is_pc']   = int(ev.get('victim',  '') in pc_set)
-                    ev['caster_is_pc']   = int(ev.get('caster',  '') in pc_set)
+                    ev['attacker_is_pc'] = int(is_pc_name(ev.get('attacker',''), pc_set))
+                    ev['defender_is_pc'] = int(is_pc_name(ev.get('defender',''), pc_set))
+                    ev['target_is_pc']   = int(is_pc_name(ev.get('target',  ''), pc_set))
+                    ev['killer_is_pc']   = int(is_pc_name(ev.get('killer',  ''), pc_set))
+                    ev['victim_is_pc']   = int(is_pc_name(ev.get('victim',  ''), pc_set))
+                    ev['caster_is_pc']   = int(is_pc_name(ev.get('caster',  ''), pc_set))
                     ev_queue.put(ev)
         print(f'  {parsed}/{lines} lines parsed ({100*parsed//lines if lines else 0}%)')
         total_lines  += lines

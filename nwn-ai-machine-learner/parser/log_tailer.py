@@ -13,6 +13,12 @@ from config import (
 from parser.event_parser import parse_line, parse_immunity_line
 from parser.learning import make_unparsed_event
 
+ALERTABLE_IMMUNITY_TYPES = {
+    'bludgeoning', 'piercing', 'slashing', 'magical',
+    'acid', 'cold', 'divine', 'electrical', 'fire',
+    'negative', 'positive', 'sonic',
+}
+
 
 class LogTailer(threading.Thread):
     def __init__(self, event_queue, pc_set: set, socketio=None):
@@ -144,6 +150,8 @@ class LogTailer(threading.Thread):
         alerts = []
         last_for_pc = self._last_imm.setdefault(pc_name, {})
         for dtype, pct in imm_data.items():
+            if dtype not in ALERTABLE_IMMUNITY_TYPES:
+                continue
             prev = last_for_pc.get(dtype, pct)
             drop = prev - pct
             risk_mobs = self._area_risk_for_damage(dtype)
@@ -201,7 +209,8 @@ class LogTailer(threading.Thread):
         for role in ('attacker', 'defender', 'target', 'killer', 'victim', 'caster'):
             key = f'{role}_is_pc'
             name = ev.get(role, '')
-            ev[key] = int(bool(name and name in self.pc_set))
+            stripped = name.strip(' .')
+            ev[key] = int(bool(name and (name in self.pc_set or stripped in self.pc_set)))
         return ev
 
     def _emit(self, ev: dict):
@@ -299,6 +308,9 @@ class LogTailer(threading.Thread):
                 if ev['type'] == 'resurrect':
                     self._register_pc(ev.get('caster', ''), 'resurrect', ev['ts'])
                     self._register_pc(ev.get('target', ''), 'resurrect', ev['ts'])
+
+                if ev['type'] == 'death_averted':
+                    self._register_pc(ev.get('target', ''), 'death_averted', ev['ts'])
 
                 if ev['type'] == 'spell':
                     caster = ev.get('caster', '')

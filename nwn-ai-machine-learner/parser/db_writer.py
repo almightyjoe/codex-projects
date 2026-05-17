@@ -64,7 +64,7 @@ class DBWriter(threading.Thread):
         if not batch:
             return
 
-        attacks, damages, saves, kills, spells, checks, unparsed = [], [], [], [], [], [], []
+        attacks, damages, saves, kills, averts, spells, checks, unparsed = [], [], [], [], [], [], [], []
 
         for ev in batch:
             t   = ev.get('type')
@@ -96,6 +96,12 @@ class DBWriter(threading.Thread):
                 kills.append((
                     sid, ev['ts'], ev['killer'], ev['victim'], 0,
                     ev.get('killer_is_pc', 0), ev.get('victim_is_pc', 0),
+                ))
+
+            elif t == 'death_averted':
+                averts.append((
+                    sid, ev['ts'], ev.get('target', ''), ev.get('ability', ''),
+                    ev.get('target_is_pc', 0),
                 ))
 
             elif t == 'xp':
@@ -185,6 +191,11 @@ class DBWriter(threading.Thread):
                 'INSERT INTO kills (session_id,ts,killer,victim,xp_gained,'
                 'killer_is_pc,victim_is_pc) VALUES (?,?,?,?,?,?,?)',
                 kills)
+        if averts:
+            conn.executemany(
+                'INSERT INTO death_averts (session_id,ts,target,ability,target_is_pc)'
+                ' VALUES (?,?,?,?,?)',
+                averts)
         if spells:
             conn.executemany(
                 'INSERT INTO spells (session_id,ts,caster,spell_name,action,is_song,caster_is_pc)'

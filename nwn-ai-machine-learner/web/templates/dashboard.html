@@ -276,7 +276,7 @@
       <button class="svc-btn" onclick="serviceAction('start')">Start</button>
       <button class="svc-btn stop" onclick="serviceAction('stop')">Stop</button>
       <button class="svc-btn restart" onclick="serviceAction('restart')">Restart</button>
-      <button class="svc-btn" onclick="repairBestiary()">Repair Bestiary</button>
+      <button class="svc-btn" onclick="repairBestiary()" title="Copies the richer legacy bestiary only if it has more area links; keeps a backup first.">Seed Bestiary</button>
     </div>
     <div id="service-status" class="config-line">Loading service status...</div>
     <div id="bestiary-status" class="config-line"></div>
@@ -418,10 +418,10 @@
     </table>
   </div>
   <div class="card w-half">
-    <h3>Bard Songs</h3>
-    <table id="songs-table">
+    <h3>Bard Song / Curse Signals</h3>
+    <table id="bard-signals-table">
       <thead><tr>
-        <th>Bard</th><th class="num">Songs</th>
+        <th>Source</th><th>Signal</th><th>Side</th><th>Effect Read</th><th>Latest</th>
       </tr></thead>
       <tbody></tbody>
     </table>
@@ -611,15 +611,17 @@ const socket = io();
 socket.on('connect',    () => setLive(true));
 socket.on('disconnect', () => setLive(false));
 socket.on('event', ev => {
-  if (['attack','damage','kill','save','spell','resurrect'].includes(ev.type)) addFeedRow(ev);
-  if (['damage','kill','save'].includes(ev.type)) refreshSnapshot();
+  if (['attack','damage','kill','save','spell','resurrect','death_averted'].includes(ev.type)) addFeedRow(ev);
+  if (['damage','kill','save','death_averted'].includes(ev.type)) refreshSnapshot();
 
   if (ev.type === 'kill' && ev.victim_is_pc) {
     startDeathTimer(ev.victim, ev.ts);
   }
   if (ev.type === 'resurrect') {
     cancelDeathTimer(ev.target);
-    addFeedRow(ev);
+  }
+  if (ev.type === 'death_averted') {
+    startDeathTimer(ev.target, ev.ts);
   }
   if (ev.type === 'save' && ev.target_is_pc && ['failure','automatic failure'].includes(ev.result)) {
     prependSaveFailRow(ev, 'live-save-fails');
@@ -715,7 +717,8 @@ async function refreshSnapshot() {
   const topType = d.top_damage_type || 'none';
   const topAmt = d.top_damage_type_amount || 0;
   const topPct = d.top_damage_type_pct || 0;
-  document.getElementById('stat-dmg-in-type').textContent = topType !== 'none' ? `${topType} leads` : '';
+  const unsplit = d.unsplit_physical || 0;
+  document.getElementById('stat-dmg-in-type').textContent = unsplit ? `unsplit physical ${fmtNum(unsplit)}` : (topType !== 'none' ? `${topType} leads` : '');
   document.getElementById('stat-top-dmg').textContent = fmtNum(topAmt);
   document.getElementById('stat-top-dmg-share').textContent = topType !== 'none' ? `${topType} ${topPct}%` : 'none';
   document.getElementById('stat-saves').textContent   = d.top_fail_save_count || d.save_failures || 0;
@@ -748,6 +751,7 @@ async function refreshDamage() {
     }
   }
   const drOut = Object.entries(typeOut)
+    .filter(([k]) => k !== 'dmg_physical')
     .map(([k,v]) => ({ type: k.replace('dmg_','').replace(/_/g,' '), total: v }))
     .filter(x => x.total > 0)
     .sort((a,b) => b.total - a.total)
@@ -815,7 +819,7 @@ function renderDmgBreakdown(rows) {
 
   const thead = document.querySelector('#dmg-breakdown-table thead');
   const tbody = document.querySelector('#dmg-breakdown-table tbody');
-  const label = col => col.replace('dmg_','').replace(/_/g,' ');
+  const label = col => col === 'dmg_physical' ? 'physical (unsplit)' : col.replace('dmg_','').replace(/_/g,' ');
 
   thead.innerHTML = '<tr>' +
     '<th>Name</th><th class="num">Total</th><th class="num">Hits</th>' +
@@ -968,12 +972,17 @@ async function refreshSpells() {
     <td style="color:var(--muted);font-size:0.85em">${r.song_count > 0 ? 'song' : 'spell'}</td>
   </tr>`).join('');
 
-  // Songs
-  const so = await (await fetch('/api/songs' + s)).json();
-  document.querySelector('#songs-table tbody').innerHTML = so.map(r => `<tr>
-    <td>${esc(r.caster)}</td>
-    <td class="num good">${r.song_count}</td>
-  </tr>`).join('');
+  // Bard song / curse signals
+  const bs = await (await fetch('/api/bard_signals' + s)).json();
+  document.querySelector('#bard-signals-table tbody').innerHTML = bs.length
+    ? bs.map(r => `<tr>
+      <td>${esc(r.caster)}</td>
+      <td>${esc(r.spell_name)}</td>
+      <td style="color:${r.source_type==='PC'?'var(--green)':'var(--yellow)'}">${esc(r.source_type)}</td>
+      <td style="color:var(--muted);white-space:normal">${esc(r.inferred_effect)}</td>
+      <td style="color:var(--muted);font-size:0.85em">${(r.latest_ts||'').substring(11,19)}</td>
+    </tr>`).join('')
+    : '<tr><td colspan="5" style="color:var(--muted)">No bard song or curse signals observed.</td></tr>';
 
   // SR checks
   await refreshSpellChecks('#sr-table tbody');
@@ -1063,8 +1072,8 @@ async function loadKillDetail(elId) {
   el.innerHTML = kills.length
     ? kills.map(k => `<div class="kill-row">
         <div class="kts">${(k.ts||'').substring(11,19)}</div>
-        <div><span class="kvic">${esc(k.victim)}</span> killed by <span class="kkil">${esc(k.killer)}</span></div>
-        ${k.last_hit ? `<div class="khow">Last hit: ${esc(k.last_hit)}</div>` : ''}
+        <div><span class="kvic">${esc(k.victim)}</span> ${k.event_type === 'averted' ? 'averted death' : 'killed by'} <span class="kkil">${esc(k.killer)}</span></div>
+        ${k.last_hit ? `<div class="khow">${k.event_type === 'averted' ? 'Ability' : 'Last hit'}: ${esc(k.last_hit)}</div>` : ''}
       </div>`).join('')
     : '<div style="color:var(--muted);font-size:0.85em">No PC deaths recorded.</div>';
 }
@@ -1100,6 +1109,7 @@ function formatEv(ev) {
   if (ev.type === 'save')      return `${ev.target}: ${ev.save_type} vs DC ${ev.dc} [${ev.result}]`;
   if (ev.type === 'spell')     return `${ev.caster} ${ev.action||''} ${ev.spell_name||''}`;
   if (ev.type === 'resurrect') return `${ev.caster} resurrected ${ev.target} (${ev.result})`;
+  if (ev.type === 'death_averted') return `${ev.target} averted death (${ev.ability})`;
   return JSON.stringify(ev);
 }
 
@@ -1120,13 +1130,16 @@ async function loadCreatureList() {
 function renderCreatureList(list) {
   const el = document.getElementById('creature-list');
   el.innerHTML = list.map(c =>
-    `<div style="padding:3px 5px;cursor:pointer;border-bottom:1px solid #1a1d26;"
-          onclick="fetchMob(${JSON.stringify(c.name)})"
+    `<div class="creature-row" data-name="${esc(c.name)}"
+          style="padding:3px 5px;cursor:pointer;border-bottom:1px solid #1a1d26;"
           onmouseover="this.style.background='#1a1d26'" onmouseout="this.style.background=''"
      ><span style="color:var(--accent)">${esc(c.name)}</span>
      ${c.race ? `<span style="color:var(--muted);font-size:0.77em"> ${esc(c.race)}</span>` : ''}
      </div>`
   ).join('');
+  el.querySelectorAll('.creature-row').forEach(row => {
+    row.addEventListener('click', () => fetchMob(row.dataset.name));
+  });
 }
 function filterBrowse(v) {
   const q = v.toLowerCase();
@@ -1211,8 +1224,9 @@ async function serviceAction(action) {
 }
 
 async function repairBestiary() {
+  if (!confirm('Seed bestiary from the legacy Rev 1 database only if it has more area links? The current database is backed up first.')) return;
   const bst = document.getElementById('bestiary-status');
-  if (bst) bst.textContent = 'Repairing bestiary...';
+  if (bst) bst.textContent = 'Checking legacy bestiary...';
   try {
     const r = await fetch('/api/bestiary/repair', { method: 'POST' });
     const d = await r.json();

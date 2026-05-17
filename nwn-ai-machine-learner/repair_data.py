@@ -41,11 +41,18 @@ def discover_pcs() -> dict[str, str]:
         if ev and ev.get("type") == "pc_detected":
             pcs[ev["name"]] = ev.get("channel", "log")
             continue
+        if ev and ev.get("type") == "death_averted":
+            pcs[ev["target"]] = "death_averted"
+            continue
         content = raw.split("] ", 2)[-1]
         for regex, source in ((_PLAYER_DETECTED, "player_detected"), (_PARTY_STATUS, "party_status")):
             m = regex.search(content)
             if m:
                 pcs[m.group(1).strip()] = source
+    for name, source in list(pcs.items()):
+        stripped = name.strip(" .")
+        if stripped and stripped != name:
+            pcs.setdefault(stripped, source)
     return pcs
 
 
@@ -82,11 +89,45 @@ def repair_combat_flags() -> set[str]:
         conn.execute(f"UPDATE damages SET defender_is_pc=CASE WHEN defender IN ({placeholders}) THEN 1 ELSE 0 END", pc_names)
         conn.execute(f"UPDATE kills SET killer_is_pc=CASE WHEN killer IN ({placeholders}) THEN 1 ELSE 0 END", pc_names)
         conn.execute(f"UPDATE kills SET victim_is_pc=CASE WHEN victim IN ({placeholders}) THEN 1 ELSE 0 END", pc_names)
+        conn.execute(f"UPDATE death_averts SET target_is_pc=CASE WHEN target IN ({placeholders}) THEN 1 ELSE 0 END", pc_names)
         conn.execute(f"UPDATE saves SET target_is_pc=CASE WHEN target IN ({placeholders}) THEN 1 ELSE 0 END", pc_names)
         conn.execute(f"UPDATE spells SET caster_is_pc=CASE WHEN caster IN ({placeholders}) THEN 1 ELSE 0 END", pc_names)
     conn.commit()
     conn.close()
     return set(pc_names)
+
+
+def backfill_death_averts() -> int:
+    """Populate illusionary/averted deaths from existing logs without rebuilding combat history."""
+    init_all()
+    pcs = discover_pcs()
+    conn = sqlite3.connect(COMBAT_DB)
+    session_row = conn.execute("SELECT id FROM sessions ORDER BY id DESC LIMIT 1").fetchone()
+    session_id = session_row[0] if session_row else None
+    inserted = 0
+    for raw in _chat_lines():
+        ev = parse_line(raw)
+        if not ev or ev.get("type") != "death_averted":
+            continue
+        target = ev.get("target", "")
+        ability = ev.get("ability", "")
+        exists = conn.execute(
+            "SELECT 1 FROM death_averts WHERE ts=? AND target=? AND ability=? LIMIT 1",
+            (ev["ts"], target, ability),
+        ).fetchone()
+        if exists:
+            continue
+        conn.execute(
+            """
+            INSERT INTO death_averts(session_id, ts, target, ability, target_is_pc)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (session_id, ev["ts"], target, ability, int(target in pcs or target.strip(" .") in pcs)),
+        )
+        inserted += 1
+    conn.commit()
+    conn.close()
+    return inserted
 
 
 def seed_legacy_bestiary_if_better() -> bool:
@@ -116,6 +157,8 @@ def seed_legacy_bestiary_if_better() -> bool:
 
 if __name__ == "__main__":
     pcs = repair_combat_flags()
+    averted = backfill_death_averts()
     copied = seed_legacy_bestiary_if_better()
     print(f"PCs tagged: {', '.join(sorted(pcs)) if pcs else '(none)'}")
+    print(f"Averted deaths backfilled: {averted}")
     print(f"Legacy bestiary seeded: {copied}")

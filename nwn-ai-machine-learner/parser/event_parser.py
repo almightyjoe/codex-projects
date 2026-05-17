@@ -18,7 +18,7 @@ _LOG_LINE = re.compile(
 # Maps log text (lower) → DB column name
 # ---------------------------------------------------------------------------
 _DMG_TYPE_MAP = {
-    # physical subtypes — NWN log always shows B/P/S separately, never "Physical"
+    # physical subtypes. If the log only says "Physical", keep it as uncertainty.
     'bludgeoning':   'dmg_bludgeoning',
     'piercing':      'dmg_piercing',
     'slashing':      'dmg_slashing',
@@ -171,6 +171,8 @@ _AREA   = re.compile(r'^You are now in (?P<area>.+?)\.$')
 _CHAT   = re.compile(r'^(?P<name>.+?) : \[(?P<channel>Party|Shout|Tell|Talk|Whisper|DM)\] ')
 _LOGIN  = re.compile(r'^(?P<name>.+?) has joined as a player\.\.?$')
 _PARTY_JOIN = re.compile(r'^(?P<name>.+?) has joined the party\.$')
+_PARTY_LEADER = re.compile(r'^(?P<name>.+?) is now the Party Leader\.$')
+_PARTY_INVITE_FROM = re.compile(r'^You have received a Party Invitation from (?P<name>.+?)\.$')
 _WELCOME = re.compile(r'^Welcome to Higher Ground, (?P<name>.+?)!$')
 _PLAYER_DETECTED = re.compile(r'^Player detected: (?P<name>.+?)$')
 _PARTY_STATUS = re.compile(r'^Party: (?P<name>.+?) \[Level \d+\]')
@@ -179,6 +181,7 @@ _SINGS  = re.compile(r'^(?P<caster>.+?) sings\.$')
 _RESURRECT = re.compile(
     r'^(?P<caster>.+?) resurrects (?P<target>.+?) : (?P<spell>.+?) : \*(?P<result>.+?)\*$'
 )
+_AVERT_DEATH = re.compile(r'^(?P<target>.+?) averts death : (?P<ability>.+)$')
 
 # Immunity block: [Server] Damage immunities: (starts the multi-line block)
 # Continuation lines: "    Bludgeoning: ..........49%..............40/-..."
@@ -290,6 +293,18 @@ def parse_line(raw_line: str) -> dict | None:
         return {'type': 'pc_detected', 'ts': ts,
                 'name': mp.group('name').strip(),
                 'channel': 'party_join', 'is_current_pc': 0}
+
+    mpl = _PARTY_LEADER.match(content)
+    if mpl:
+        return {'type': 'pc_detected', 'ts': ts,
+                'name': mpl.group('name').strip(),
+                'channel': 'party_leader', 'is_current_pc': 0}
+
+    mpi = _PARTY_INVITE_FROM.match(content)
+    if mpi:
+        return {'type': 'pc_detected', 'ts': ts,
+                'name': mpi.group('name').strip(),
+                'channel': 'party_invite', 'is_current_pc': 0}
 
     mc = _CHAT.match(content)
     if mc:
@@ -495,6 +510,13 @@ def parse_line(raw_line: str) -> dict | None:
             'type': 'resurrect', 'ts': ts,
             'caster': m11.group('caster'), 'target': m11.group('target'),
             'spell': m11.group('spell'), 'result': m11.group('result'),
+        }
+
+    m11b = _AVERT_DEATH.match(content)
+    if m11b:
+        return {
+            'type': 'death_averted', 'ts': ts,
+            'target': m11b.group('target'), 'ability': m11b.group('ability'),
         }
 
     # ── SPELL CAST ───────────────────────────────────────────────────────────

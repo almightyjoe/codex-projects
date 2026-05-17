@@ -41,7 +41,7 @@ CREATE TABLE IF NOT EXISTS damages (
     attacker        TEXT,
     defender        TEXT,
     total_damage    INTEGER,
-    -- Physical subtypes (NWN log always shows these separately)
+    -- Physical subtypes. dmg_physical means the log did not split B/P/S.
     dmg_bludgeoning INTEGER DEFAULT 0,
     dmg_piercing    INTEGER DEFAULT 0,
     dmg_slashing    INTEGER DEFAULT 0,
@@ -111,6 +111,15 @@ CREATE TABLE IF NOT EXISTS kills (
     xp_gained    INTEGER DEFAULT 0,
     killer_is_pc INTEGER DEFAULT 0,
     victim_is_pc INTEGER DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS death_averts (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id   INTEGER,
+    ts           TEXT,
+    target       TEXT,
+    ability      TEXT,
+    target_is_pc INTEGER DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS spells (
@@ -255,6 +264,7 @@ CREATE INDEX IF NOT EXISTS idx_damages_ts        ON damages(ts);
 CREATE INDEX IF NOT EXISTS idx_saves_target      ON saves(target);
 CREATE INDEX IF NOT EXISTS idx_saves_ts          ON saves(ts);
 CREATE INDEX IF NOT EXISTS idx_kills_ts          ON kills(ts);
+CREATE INDEX IF NOT EXISTS idx_death_averts_ts   ON death_averts(ts);
 CREATE INDEX IF NOT EXISTS idx_spells_caster     ON spells(caster);
 CREATE INDEX IF NOT EXISTS idx_unparsed_bucket   ON unparsed_lines(bucket);
 CREATE INDEX IF NOT EXISTS idx_unparsed_reviewed ON unparsed_lines(reviewed);

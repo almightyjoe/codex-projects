@@ -14,6 +14,7 @@ from query.sql_queries import (
     mob_info, best_damage_vs_mob, search_mobs, mobs_in_area,
     session_list, mob_damage_dealt, pc_damage_dealt, attack_accuracy,
     area_threat_summary, creature_list, spell_usage_summary, bard_songs_summary,
+    bard_signal_summary,
     damage_breakdown, accuracy_detail, spell_check_summary,
     recent_save_failures, pc_kill_detail,
 )
@@ -265,6 +266,12 @@ def api_spells():
 def api_songs():
     sid = request.args.get('session')
     return jsonify(bard_songs_summary(int(sid) if sid else None))
+
+
+@app.route('/api/bard_signals')
+def api_bard_signals():
+    sid = request.args.get('session')
+    return jsonify(bard_signal_summary(int(sid) if sid else None))
 
 
 @app.route('/api/area')

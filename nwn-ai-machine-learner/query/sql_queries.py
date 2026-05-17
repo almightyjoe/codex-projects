@@ -7,8 +7,7 @@ from config import COMBAT_DB, BESTIARY_DB
 # All damage columns tracked in the damages table.
 _ALL_DMG_TYPES = [
     ('Bludgeoning', 'dmg_bludgeoning'), ('Piercing',   'dmg_piercing'),
-    ('Slashing',    'dmg_slashing'),    ('Physical',    'dmg_physical'),
-    ('Acid',        'dmg_acid'),
+    ('Slashing',    'dmg_slashing'),    ('Acid',        'dmg_acid'),
     ('Cold',        'dmg_cold'),        ('Electrical',  'dmg_electrical'),
     ('Fire',        'dmg_fire'),        ('Sonic',       'dmg_sonic'),
     ('Divine',      'dmg_divine'),      ('Magical',     'dmg_magical'),
@@ -237,6 +236,36 @@ def bard_songs_summary(session_id=None) -> list[dict]:
         FROM spells {where}
         GROUP BY caster ORDER BY song_count DESC
     ''', params).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def bard_signal_summary(session_id=None, limit: int = 30) -> list[dict]:
+    """Bard song / curse signals. Raw logs identify use, not exact aura math."""
+    conn = _cdb()
+    where = """
+        WHERE (is_song=1
+           OR LOWER(spell_name) LIKE '%curse%'
+           OR LOWER(spell_name) LIKE '%song%')
+    """
+    params = []
+    if session_id:
+        where += ' AND session_id=?'
+        params.append(session_id)
+    rows = conn.execute(f'''
+        SELECT caster, spell_name,
+               CASE WHEN caster_is_pc=1 THEN 'PC' ELSE 'Mob/Unknown' END AS source_type,
+               CASE
+                 WHEN is_song=1 THEN 'Bard song observed; exact buff/debuff values are not printed in the log'
+                 WHEN LOWER(spell_name) LIKE '%curse%' THEN 'Curse effect observed; saves/DCs appear separately when logged'
+                 ELSE 'Bard-related spell signal'
+               END AS inferred_effect,
+               MAX(ts) AS latest_ts
+        FROM spells {where}
+        GROUP BY caster, spell_name, caster_is_pc
+        ORDER BY latest_ts DESC
+        LIMIT ?
+    ''', params + [limit]).fetchall()
     conn.close()
     return [dict(r) for r in rows]
 
@@ -476,9 +505,15 @@ def stat_snapshot(session_id=None) -> dict:
     total_dmg_out = conn.execute(
         f'SELECT COALESCE(SUM(total_damage),0) FROM damages WHERE attacker_is_pc=1 {sid}'
     ).fetchone()[0]
+    unsplit_physical = conn.execute(
+        f'SELECT COALESCE(SUM(dmg_physical),0) FROM damages WHERE defender_is_pc=1 {sid}'
+    ).fetchone()[0]
 
     pc_deaths = conn.execute(
         f'SELECT COUNT(*) FROM kills WHERE victim_is_pc=1 {sid}'
+    ).fetchone()[0]
+    averted_deaths = conn.execute(
+        f'SELECT COUNT(*) FROM death_averts WHERE target_is_pc=1 {sid}'
     ).fetchone()[0]
 
     mob_kills = conn.execute(
@@ -533,7 +568,9 @@ def stat_snapshot(session_id=None) -> dict:
         'top_damage_type':   top_dmg_type,
         'top_damage_type_amount': top_dmg_amount,
         'top_damage_type_pct': round(100.0 * top_dmg_amount / total_dmg_in, 1) if total_dmg_in else 0,
+        'unsplit_physical':  unsplit_physical,
         'pc_deaths':        pc_deaths,
+        'averted_deaths':   averted_deaths,
         'mob_kills':        mob_kills,
         'attacks_received': total_attacks_in,
         'save_failures':    save_fails,
@@ -692,7 +729,7 @@ def pc_kill_detail(session_id=None, limit: int = 30) -> list[dict]:
         where += ' AND k.session_id=?'
         params.append(session_id)
     rows = conn.execute(f'''
-        SELECT k.ts, k.victim, k.killer, k.xp_gained,
+        SELECT k.ts, k.victim, k.killer, k.xp_gained, 'death' AS event_type,
                (SELECT d.attacker || ' (' || d.total_damage || ' ' ||
                 CASE
                   WHEN d.dmg_fire>0     THEN 'fire'
@@ -715,7 +752,13 @@ def pc_kill_detail(session_id=None, limit: int = 30) -> list[dict]:
                 ORDER BY d.id DESC LIMIT 1
                ) as last_hit
         FROM kills k {where}
-        ORDER BY k.id DESC LIMIT ?
-    ''', params + [session_id, session_id, limit]).fetchall()
+        UNION ALL
+        SELECT da.ts, da.target AS victim, 'Averted death' AS killer, 0 AS xp_gained,
+               'averted' AS event_type, da.ability AS last_hit
+        FROM death_averts da
+        WHERE da.target_is_pc=1
+          AND (? IS NULL OR da.session_id = ?)
+        ORDER BY ts DESC LIMIT ?
+    ''', params + [session_id, session_id, session_id, session_id, limit]).fetchall()
     conn.close()
     return [dict(r) for r in rows]
