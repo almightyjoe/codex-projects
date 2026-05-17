@@ -88,6 +88,7 @@ class DBWriter(threading.Thread):
                     sid, ev['ts'], ev['target'], ev['save_type'],
                     ev.get('check_type', 'save'), ev.get('vs_source', ''), ev['result'],
                     ev['roll'], ev['bonus'], ev['total'], ev['dc'],
+                    ev.get('spell_name', ''),
                     ev.get('target_is_pc', 0),
                 ))
 
@@ -113,7 +114,9 @@ class DBWriter(threading.Thread):
                     sid, ev['ts'],
                     ev.get('source', ''), ev.get('target', ''),
                     ev.get('check_type', ''), ev.get('result', ''),
-                    ev.get('roll'), ev.get('bonus'), ev.get('vs_value'),
+                    ev.get('roll'), ev.get('bonus'), ev.get('total'),
+                    ev.get('dc'), ev.get('sr_value'), ev.get('spell_name', ''),
+                    ev.get('vs_value'),
                 ))
 
             elif t == 'area':
@@ -123,8 +126,8 @@ class DBWriter(threading.Thread):
                 )
 
             elif t == 'pc_immunity':
-                cols = ['session_id', 'ts', 'area_name']
-                vals = [sid, ev['ts'], ev.get('area', '')]
+                cols = ['session_id', 'ts', 'pc_name', 'area_name']
+                vals = [sid, ev['ts'], ev.get('pc_name', 'Unknown PC'), ev.get('area', '')]
                 for field in [
                     'imm_bludgeoning','imm_piercing','imm_slashing','imm_magical',
                     'imm_acid','imm_cold','imm_divine','imm_electrical','imm_fire',
@@ -146,10 +149,11 @@ class DBWriter(threading.Thread):
             elif t == 'debuff_alert':
                 conn.execute(
                     'INSERT INTO debuff_alerts '
-                    '(session_id,ts,damage_type,old_value,new_value,drop_amount,alert_level)'
-                    ' VALUES (?,?,?,?,?,?,?)',
-                    (sid, ev['ts'], ev['damage_type'], ev['old_value'],
-                     ev['new_value'], ev['drop_amount'], ev['alert_level'])
+                    '(session_id,ts,pc_name,area_name,damage_type,old_value,new_value,drop_amount,alert_level,reason)'
+                    ' VALUES (?,?,?,?,?,?,?,?,?,?)',
+                    (sid, ev['ts'], ev.get('pc_name', 'Unknown PC'), ev.get('area', ''),
+                     ev['damage_type'], ev['old_value'], ev['new_value'],
+                     ev['drop_amount'], ev['alert_level'], ev.get('reason', ''))
                 )
 
             elif t == 'unparsed':
@@ -174,7 +178,7 @@ class DBWriter(threading.Thread):
         if saves:
             conn.executemany(
                 'INSERT INTO saves (session_id,ts,target,save_type,check_type,vs_source,'
-                'result,roll,bonus,total,dc,target_is_pc) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',
+                'result,roll,bonus,total,dc,spell_name,target_is_pc) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)',
                 saves)
         if kills:
             conn.executemany(
@@ -189,7 +193,8 @@ class DBWriter(threading.Thread):
         if checks:
             conn.executemany(
                 'INSERT INTO spell_checks (session_id,ts,source,target,check_type,'
-                'result,roll,bonus,vs_value) VALUES (?,?,?,?,?,?,?,?,?)',
+                'result,roll,bonus,total,dc,sr_value,spell_name,vs_value) '
+                'VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)',
                 checks)
         if unparsed:
             conn.executemany(

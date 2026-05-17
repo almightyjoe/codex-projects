@@ -6,7 +6,10 @@ import os, time, threading, sqlite3
 import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from config import NWN_LOG_DIR, NWN_LOG_FILES, LOG_POLL_INTERVAL, COMBAT_DB, PLAYER_CHARACTERS
+from config import (
+    NWN_LOG_DIR, NWN_LOG_FILES, LOG_POLL_INTERVAL, COMBAT_DB, BESTIARY_DB,
+    PLAYER_CHARACTERS,
+)
 from parser.event_parser import parse_line, parse_immunity_line
 from parser.learning import make_unparsed_event
 
@@ -20,6 +23,7 @@ class LogTailer(threading.Thread):
         self._stop_evt  = threading.Event()
         self._file_pos  = {}
         self._current_area = ''
+        self._current_pc   = 'Unknown PC'
 
         # multi-line immunity block state
         self._in_imm_block = False
@@ -29,6 +33,7 @@ class LogTailer(threading.Thread):
 
         # debuff tracking: last known immunity values
         self._last_imm     = {}
+        self._last_spell_by_caster = {}
 
     def stop(self):
         self._stop_evt.set()
@@ -58,7 +63,7 @@ class LogTailer(threading.Thread):
             self._file_pos[path] = fh.tell()
         return lines
 
-    def _register_pc(self, name: str, source: str, ts: str):
+    def _register_pc(self, name: str, source: str, ts: str, is_current_pc: int = 0):
         if not name or len(name) < 2:
             return
         if name in self.pc_set:
@@ -110,6 +115,69 @@ class LogTailer(threading.Thread):
         self._last_imm.update(imm_data)
         return alerts
 
+    def _area_risk_for_damage(self, dtype: str) -> str:
+        if not self._current_area or not os.path.isfile(BESTIARY_DB):
+            return ''
+        try:
+            conn = sqlite3.connect(BESTIARY_DB)
+            row = conn.execute(
+                """
+                SELECT GROUP_CONCAT(c.name, ', ') AS names
+                FROM creatures c
+                JOIN creature_areas ca ON ca.creature_id=c.id
+                JOIN areas a ON a.id=ca.area_id
+                WHERE a.name=?
+                  AND (
+                    LOWER(COALESCE(c.deals,'')) LIKE ?
+                    OR LOWER(COALESCE(c.special_abilities,'')) LIKE ?
+                  )
+                LIMIT 1
+                """,
+                (self._current_area, f'%{dtype.lower()}%', f'%{dtype.lower()}%'),
+            ).fetchone()
+            conn.close()
+            return row[0] if row and row[0] else ''
+        except Exception:
+            return ''
+
+    def _check_debuffs(self, pc_name: str, imm_data: dict, ts: str) -> list[dict]:
+        alerts = []
+        last_for_pc = self._last_imm.setdefault(pc_name, {})
+        for dtype, pct in imm_data.items():
+            prev = last_for_pc.get(dtype, pct)
+            drop = prev - pct
+            risk_mobs = self._area_risk_for_damage(dtype)
+            reason = ''
+            level = ''
+            if pct < 0:
+                level = 'CRITICAL'
+                reason = 'immunity is below zero'
+            elif pct < 20:
+                level = 'CRITICAL'
+                reason = 'immunity is critically low'
+            elif drop >= 20:
+                level = 'CRITICAL' if pct < 50 else 'WARNING'
+                reason = f'immunity dropped by {drop:g} points'
+            elif pct < 50 and risk_mobs:
+                level = 'WARNING'
+                reason = f'low immunity in area with known {dtype} threats: {risk_mobs}'
+
+            if level:
+                alerts.append({
+                    'type':        'debuff_alert',
+                    'ts':          ts,
+                    'pc_name':     pc_name,
+                    'area':        self._current_area,
+                    'damage_type': dtype,
+                    'old_value':   prev,
+                    'new_value':   pct,
+                    'drop_amount': drop,
+                    'alert_level': level,
+                    'reason':      reason,
+                })
+        last_for_pc.update(imm_data)
+        return alerts
+
     def _flush_imm_block(self, ts: str) -> list[dict]:
         """Finalize accumulated immunity block into events."""
         if not self._imm_data:
@@ -117,11 +185,12 @@ class LogTailer(threading.Thread):
         ev = {
             'type':      'pc_immunity',
             'ts':        ts,
+            'pc_name':   self._current_pc,
             'area':      self._current_area,
             **{f'imm_{k}': v for k, v in self._imm_data.items()},
             **{f'res_{k}': v for k, v in self._imm_dr.items()},
         }
-        debuffs = self._check_debuffs(self._imm_data, ts)
+        debuffs = self._check_debuffs(self._current_pc, self._imm_data, ts)
         self._imm_data = {}
         self._imm_dr   = {}
         self._in_imm_block = False
@@ -205,8 +274,17 @@ class LogTailer(threading.Thread):
                     continue
 
                 if ev['type'] == 'pc_detected':
-                    self._register_pc(ev['name'], ev['channel'], ev['ts'])
+                    if ev.get('is_current_pc'):
+                        self._current_pc = ev['name']
+                    self._register_pc(
+                        ev['name'], ev['channel'], ev['ts'],
+                        ev.get('is_current_pc', 0),
+                    )
                     # also emit so dashboard can update PC list
+                    self._emit(ev)
+                    continue
+
+                if ev['type'] == 'account_detected':
                     self._emit(ev)
                     continue
 
@@ -221,6 +299,21 @@ class LogTailer(threading.Thread):
                 if ev['type'] == 'resurrect':
                     self._register_pc(ev.get('caster', ''), 'resurrect', ev['ts'])
                     self._register_pc(ev.get('target', ''), 'resurrect', ev['ts'])
+
+                if ev['type'] == 'spell':
+                    caster = ev.get('caster', '')
+                    if caster:
+                        self._last_spell_by_caster[caster] = ev.get('spell_name', '')
+
+                if ev['type'] == 'spell_check':
+                    source = ev.get('source', '')
+                    if source and not ev.get('spell_name'):
+                        ev['spell_name'] = self._last_spell_by_caster.get(source, '')
+
+                if ev['type'] == 'save':
+                    source = ev.get('vs_source', '')
+                    if source and not ev.get('spell_name'):
+                        ev['spell_name'] = self._last_spell_by_caster.get(source, '')
 
                 self._emit(self._tag(ev))
 

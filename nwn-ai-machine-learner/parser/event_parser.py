@@ -121,37 +121,37 @@ _DMG_PART = re.compile(r'(\d+)\s+([A-Za-z][A-Za-z ]*?)(?=\s+\d|\s*$)')
 # ---------------------------------------------------------------------------
 # Standard save: target : Type[/Sub] Save vs. source : *result* : (roll +/- bonus = N vs. DC: dc)
 _SAVE = re.compile(
-    r'^(?P<target>.+?) : (?P<save_type>Reflex|Fortitude(?:/\w+)?|Will|AB) (?:Save )?vs\. '
+    r'^(?P<target>.+?) : (?P<save_type>[^:]+?) (?:Save )?vs\. '
     r'(?P<source>.+?) : \*(?P<result>success|failure|automatic success|automatic failure|immune)\* '
-    r': \((?P<roll>\d+) (?P<sign>[+\-]) (?P<bonus>\d+) = -?\d+ (?:vs\. DC:|/) (?P<dc>\d+)\)$'
+    r': \((?P<roll>\d+) (?P<sign>[+\-]) (?P<bonus>\d+) = (?P<total>-?\d+) (?:vs\. DC:|/) (?P<dc>\d+)\)$'
 )
 # Skill check (simple or vs opponent)
 _SKILL = re.compile(
     r'^(?P<take20>Take 20 : )?(?P<character>.+?) : (?P<skill>[^:]+?) '
     r'(?:vs\. (?P<opponent>.+?) )?'
     r': \*(?P<result>success|failure|automatic success|automatic failure|success not possible)\* '
-    r': \(\d+ [+\-] \d+ = -?\d+ (?:vs\. DC:|/) (?P<dc>\d+)\)$'
+    r': \((?P<roll>\d+) (?P<sign>[+\-]) (?P<bonus>\d+) = (?P<total>-?\d+) (?:vs\. DC:|/) (?P<dc>\d+)\)$'
 )
 # Spell resistance check
 _SR = re.compile(
     r'^(?P<source>.+?) : (?:SR|Spell Resistance) : \*(?P<result>resisted|defeated|immune|absorbed)\*'
-    r'(?:: \(\d+ [+\-] \d+ = \d+ (?:vs\. SR:|/) (?P<sr>\d+)\))?$'
+    r'(?:\s*:\s*\((?P<roll>\d+) (?P<sign>[+\-]) (?P<bonus>\d+) = (?P<total>\d+) (?:vs\. SR:|/) (?P<sr>\d+)\))?$'
 )
 # Spell penetration check
 _SP = re.compile(
     r'^(?P<target>.+?) : (?:SP|Spell Penetration) : \*(?P<result>success|failure|immune|absorbed)\*'
-    r'(?:: \(\d+ [+\-] \d+ = \d+ (?:vs\. SR:|/) (?P<sr>\d+)\))?$'
+    r'(?:\s*:\s*\((?P<roll>\d+) (?P<sign>[+\-]) (?P<bonus>\d+) = (?P<total>\d+) (?:vs\. SR:|/) (?P<sr>\d+)\))?$'
 )
 # Turn resistance
 _TURN = re.compile(
     r'^(?P<target>.+?) : (?P<type>Turn .+?|T\.) : \*(?P<result>success|failure)\*'
-    r'(?: : \(\d+ [+\-] \d+ = \d+ (?:vs\. TR:|/) (?P<tr>\d+)\))?$'
+    r'(?:\s*:\s*\((?P<roll>\d+) (?P<sign>[+\-]) (?P<bonus>\d+) = (?P<total>\d+) (?:vs\. TR:|/) (?P<tr>\d+)\))?$'
 )
 # Dispel / Breach
 _DISPEL = re.compile(
     r'^(?P<source>.+?) : (?P<dtype>Dispel|Breach) (?P<effect>.+?) : '
     r'\*(?P<result>resisted|defeated|dispelled)\*'
-    r'(?:: \(\d+ [+\-] \d+ = \d+ (?:vs\. DC:|/) (?P<dc>\d+)\))?$'
+    r'(?:\s*:\s*\((?P<roll>\d+) (?P<sign>[+\-]) (?P<bonus>\d+) = (?P<total>\d+) (?:vs\. DC:|/) (?P<dc>\d+)\))?$'
 )
 # Initiative
 _INITIATIVE = re.compile(
@@ -165,6 +165,9 @@ _KILL   = re.compile(r'^(?P<killer>.+?) killed (?P<victim>.+)$')
 _XP     = re.compile(r'^Experience Points Gained:\s+(?P<xp>\d+)$')
 _AREA   = re.compile(r'^You are now in (?P<area>.+?)\.$')
 _CHAT   = re.compile(r'^(?P<name>.+?) : \[(?P<channel>Party|Shout|Tell|Talk|Whisper|DM)\] ')
+_LOGIN  = re.compile(r'^(?P<name>.+?) has joined as a player\.\.?$')
+_PARTY_JOIN = re.compile(r'^(?P<name>.+?) has joined the party\.$')
+_WELCOME = re.compile(r'^Welcome to Higher Ground, (?P<name>.+?)!$')
 _SPELL  = re.compile(r'^(?P<caster>.+?) (?P<action>casting|casts) (?P<spell>.+)$')
 _SINGS  = re.compile(r'^(?P<caster>.+?) sings\.$')
 _RESURRECT = re.compile(
@@ -253,11 +256,30 @@ def parse_line(raw_line: str) -> dict | None:
         return {'type': 'area', 'ts': ts, 'area': ma.group('area')}
 
     # ── PC CHAT DETECTION ────────────────────────────────────────────────────
+    mw = _WELCOME.match(content)
+    if mw:
+        return {'type': 'pc_detected', 'ts': ts,
+                'name': mw.group('name').strip(),
+                'channel': 'welcome', 'is_current_pc': 1}
+
+    ml = _LOGIN.match(content)
+    if ml:
+        return {'type': 'account_detected', 'ts': ts,
+                'name': ml.group('name').strip(), 'channel': 'login'}
+
+    mp = _PARTY_JOIN.match(content)
+    if mp:
+        return {'type': 'pc_detected', 'ts': ts,
+                'name': mp.group('name').strip(),
+                'channel': 'party_join', 'is_current_pc': 0}
+
     mc = _CHAT.match(content)
     if mc:
+        if mc.group('channel') == 'Tell':
+            return None
         return {'type': 'pc_detected', 'ts': ts,
                 'name': mc.group('name').strip(),
-                'channel': mc.group('channel')}
+                'channel': mc.group('channel'), 'is_current_pc': 0}
 
     # ── BARD SINGS ───────────────────────────────────────────────────────────
     ms = _SINGS.match(content)
@@ -342,8 +364,27 @@ def parse_line(raw_line: str) -> dict | None:
             'result':     m4.group('result'),
             'roll':       int(m4.group('roll')),
             'bonus':      bonus,
-            'total':      int(m4.group('roll')) + bonus,
+            'total':      int(m4.group('total')),
             'dc':         int(m4.group('dc')),
+        }
+
+    m4b = _SKILL.match(content)
+    if m4b:
+        bonus = int(m4b.group('bonus'))
+        if m4b.group('sign') == '-':
+            bonus = -bonus
+        return {
+            'type':       'save',
+            'ts':         ts,
+            'target':     m4b.group('character'),
+            'save_type':  m4b.group('skill'),
+            'check_type': 'skill',
+            'vs_source':  m4b.group('opponent') or '',
+            'result':     m4b.group('result'),
+            'roll':       int(m4b.group('roll')),
+            'bonus':      bonus,
+            'total':      int(m4b.group('total')),
+            'dc':         int(m4b.group('dc')),
         }
 
     # ── KILL ─────────────────────────────────────────────────────────────────
@@ -360,42 +401,72 @@ def parse_line(raw_line: str) -> dict | None:
     # ── SPELL RESISTANCE ─────────────────────────────────────────────────────
     m7 = _SR.match(content)
     if m7:
+        bonus = int(m7.group('bonus')) if m7.group('bonus') else None
+        if bonus is not None and m7.group('sign') == '-':
+            bonus = -bonus
         return {
             'type': 'spell_check', 'ts': ts,
             'check_type': 'SR', 'source': m7.group('source'),
             'result': m7.group('result'),
+            'roll': int(m7.group('roll')) if m7.group('roll') else None,
+            'bonus': bonus,
+            'total': int(m7.group('total')) if m7.group('total') else None,
+            'dc': int(m7.group('sr')) if m7.group('sr') else None,
+            'sr_value': int(m7.group('sr')) if m7.group('sr') else None,
             'vs_value': int(m7.group('sr')) if m7.group('sr') else None,
         }
 
     # ── SPELL PENETRATION ─────────────────────────────────────────────────────
     m8 = _SP.match(content)
     if m8:
+        bonus = int(m8.group('bonus')) if m8.group('bonus') else None
+        if bonus is not None and m8.group('sign') == '-':
+            bonus = -bonus
         return {
             'type': 'spell_check', 'ts': ts,
             'check_type': 'SP', 'target': m8.group('target'),
             'result': m8.group('result'),
+            'roll': int(m8.group('roll')) if m8.group('roll') else None,
+            'bonus': bonus,
+            'total': int(m8.group('total')) if m8.group('total') else None,
+            'dc': int(m8.group('sr')) if m8.group('sr') else None,
+            'sr_value': int(m8.group('sr')) if m8.group('sr') else None,
             'vs_value': int(m8.group('sr')) if m8.group('sr') else None,
         }
 
     # ── TURN CHECK ───────────────────────────────────────────────────────────
     m9 = _TURN.match(content)
     if m9:
+        bonus = int(m9.group('bonus')) if m9.group('bonus') else None
+        if bonus is not None and m9.group('sign') == '-':
+            bonus = -bonus
         return {
             'type': 'spell_check', 'ts': ts,
             'check_type': 'Turn', 'target': m9.group('target'),
             'result': m9.group('result'),
+            'roll': int(m9.group('roll')) if m9.group('roll') else None,
+            'bonus': bonus,
+            'total': int(m9.group('total')) if m9.group('total') else None,
+            'dc': int(m9.group('tr')) if m9.group('tr') else None,
             'vs_value': int(m9.group('tr')) if m9.group('tr') else None,
         }
 
     # ── DISPEL / BREACH ──────────────────────────────────────────────────────
     m10 = _DISPEL.match(content)
     if m10:
+        bonus = int(m10.group('bonus')) if m10.group('bonus') else None
+        if bonus is not None and m10.group('sign') == '-':
+            bonus = -bonus
         return {
             'type': 'spell_check', 'ts': ts,
             'check_type': m10.group('dtype'),
             'source': m10.group('source'),
             'target': m10.group('effect'),
             'result': m10.group('result'),
+            'roll': int(m10.group('roll')) if m10.group('roll') else None,
+            'bonus': bonus,
+            'total': int(m10.group('total')) if m10.group('total') else None,
+            'dc': int(m10.group('dc')) if m10.group('dc') else None,
             'vs_value': int(m10.group('dc')) if m10.group('dc') else None,
         }
 

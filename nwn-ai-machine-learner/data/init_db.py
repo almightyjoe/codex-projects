@@ -97,6 +97,7 @@ CREATE TABLE IF NOT EXISTS saves (
     bonus        INTEGER,
     total        INTEGER,
     dc           INTEGER,
+    spell_name   TEXT,
     target_is_pc INTEGER DEFAULT 0
 );
 
@@ -132,6 +133,10 @@ CREATE TABLE IF NOT EXISTS spell_checks (
     result       TEXT,
     roll         INTEGER,
     bonus        INTEGER,
+    total        INTEGER,
+    dc           INTEGER,
+    sr_value     INTEGER,
+    spell_name   TEXT,
     vs_value     INTEGER
 );
 
@@ -153,6 +158,7 @@ CREATE TABLE IF NOT EXISTS pc_status (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     session_id      INTEGER,
     ts              TEXT,
+    pc_name         TEXT DEFAULT 'Unknown PC',
     area_name       TEXT,
     imm_bludgeoning REAL DEFAULT 0,
     imm_piercing    REAL DEFAULT 0,
@@ -192,11 +198,14 @@ CREATE TABLE IF NOT EXISTS debuff_alerts (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     session_id  INTEGER,
     ts          TEXT,
+    pc_name     TEXT DEFAULT 'Unknown PC',
+    area_name   TEXT,
     damage_type TEXT,
     old_value   REAL,
     new_value   REAL,
     drop_amount REAL,
-    alert_level TEXT
+    alert_level TEXT,
+    reason      TEXT
 );
 
 CREATE TABLE IF NOT EXISTS unparsed_lines (
@@ -380,10 +389,35 @@ def _migrate_combat(conn):
     existing_saves = {r[1] for r in conn.execute("PRAGMA table_info(saves)")}
     if 'check_type' not in existing_saves:
         conn.execute("ALTER TABLE saves ADD COLUMN check_type TEXT DEFAULT 'save'")
+    if 'spell_name' not in existing_saves:
+        conn.execute("ALTER TABLE saves ADD COLUMN spell_name TEXT")
 
     existing_spells = {r[1] for r in conn.execute("PRAGMA table_info(spells)")}
     if 'is_song' not in existing_spells:
         conn.execute("ALTER TABLE spells ADD COLUMN is_song INTEGER DEFAULT 0")
+
+    existing_checks = {r[1] for r in conn.execute("PRAGMA table_info(spell_checks)")}
+    for col, typ in [
+        ('total', 'INTEGER'),
+        ('dc', 'INTEGER'),
+        ('sr_value', 'INTEGER'),
+        ('spell_name', 'TEXT'),
+    ]:
+        if col not in existing_checks:
+            conn.execute(f"ALTER TABLE spell_checks ADD COLUMN {col} {typ}")
+
+    existing_pc_status = {r[1] for r in conn.execute("PRAGMA table_info(pc_status)")}
+    if 'pc_name' not in existing_pc_status:
+        conn.execute("ALTER TABLE pc_status ADD COLUMN pc_name TEXT DEFAULT 'Unknown PC'")
+
+    existing_alerts = {r[1] for r in conn.execute("PRAGMA table_info(debuff_alerts)")}
+    for col, typ in [
+        ('pc_name', "TEXT DEFAULT 'Unknown PC'"),
+        ('area_name', 'TEXT'),
+        ('reason', 'TEXT'),
+    ]:
+        if col not in existing_alerts:
+            conn.execute(f"ALTER TABLE debuff_alerts ADD COLUMN {col} {typ}")
 
     conn.commit()
 

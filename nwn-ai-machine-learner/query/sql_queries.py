@@ -114,15 +114,15 @@ def kills_by_mob(session_id=None, limit=15) -> list[dict]:
 def save_failures(session_id=None, limit=15) -> list[dict]:
     """Which saves are failing, at what DCs, from what source?"""
     conn = _cdb()
-    where = "WHERE target_is_pc=1 AND result IN ('failure','automatic failure')"
+    where = "WHERE s.target_is_pc=1 AND s.result IN ('failure','automatic failure')"
     params = []
     if session_id:
-        where += ' AND session_id=?'
+        where += ' AND s.session_id=?'
         params.append(session_id)
     rows = conn.execute(f'''
         SELECT save_type, check_type, vs_source, dc,
                COUNT(*) as fail_count, AVG(bonus) as avg_bonus
-        FROM saves {where}
+        FROM saves s {where}
         GROUP BY save_type, vs_source, dc
         ORDER BY fail_count DESC LIMIT ?
     ''', params + [limit]).fetchall()
@@ -597,7 +597,7 @@ def accuracy_detail(session_id=None, pc_attacks: bool = True, limit: int = 60) -
 
 
 def spell_check_summary(session_id=None, limit: int = 40) -> list[dict]:
-    """Spell resistance / penetration / turn / dispel check results."""
+    """Spell resistance / penetration / turn / dispel check results with exact math."""
     conn = _cdb()
     where = 'WHERE 1'
     params = []
@@ -605,12 +605,27 @@ def spell_check_summary(session_id=None, limit: int = 40) -> list[dict]:
         where += ' AND session_id=?'
         params.append(session_id)
     rows = conn.execute(f'''
-        SELECT check_type, source, target, result,
+        WITH enriched AS (
+          SELECT sc.*,
+                 COALESCE(NULLIF(sc.spell_name, ''), (
+                   SELECT sp.spell_name
+                   FROM spells sp
+                   WHERE sp.session_id=sc.session_id
+                     AND sp.caster=sc.source
+                     AND sp.ts<=sc.ts
+                   ORDER BY sp.id DESC LIMIT 1
+                 ), '') AS inferred_spell
+          FROM spell_checks sc {where}
+        )
+        SELECT check_type, source, target, inferred_spell AS spell_name, result, dc, sr_value,
                COUNT(*) as count,
-               ROUND(AVG(vs_value), 0) as avg_val,
-               MAX(vs_value) as max_val
-        FROM spell_checks {where}
-        GROUP BY check_type, source, result
+               ROUND(AVG(roll), 1) as avg_roll,
+               ROUND(AVG(bonus), 1) as avg_bonus,
+               ROUND(AVG(total), 1) as avg_total,
+               MAX(total) as max_total,
+               MIN(total) as min_total
+        FROM enriched
+        GROUP BY check_type, source, target, inferred_spell, result, dc, sr_value
         ORDER BY count DESC LIMIT ?
     ''', params + [limit]).fetchall()
     conn.close()
@@ -620,14 +635,23 @@ def spell_check_summary(session_id=None, limit: int = 40) -> list[dict]:
 def recent_save_failures(session_id=None, limit: int = 50) -> list[dict]:
     """Chronological list of recent PC save failures."""
     conn = _cdb()
-    where = "WHERE target_is_pc=1 AND result IN ('failure','automatic failure')"
+    where = "WHERE s.target_is_pc=1 AND s.result IN ('failure','automatic failure')"
     params = []
     if session_id:
-        where += ' AND session_id=?'
+        where += ' AND s.session_id=?'
         params.append(session_id)
     rows = conn.execute(f'''
-        SELECT ts, target, save_type, check_type, vs_source, dc, roll, bonus, total
-        FROM saves {where}
+        SELECT s.ts, s.target, s.save_type, s.check_type, s.vs_source,
+               COALESCE(NULLIF(s.spell_name, ''), (
+                 SELECT sp.spell_name
+                 FROM spells sp
+                 WHERE sp.session_id=s.session_id
+                   AND sp.caster=s.vs_source
+                   AND sp.ts<=s.ts
+                 ORDER BY sp.id DESC LIMIT 1
+               ), s.vs_source) AS source_spell,
+               s.dc, s.roll, s.bonus, s.total
+        FROM saves s {where}
         ORDER BY id DESC LIMIT ?
     ''', params + [limit]).fetchall()
     conn.close()

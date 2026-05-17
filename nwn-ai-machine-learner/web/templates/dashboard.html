@@ -392,8 +392,9 @@
       <div class="tbl-scroll" id="sr-wrap">
         <table id="sr-table">
           <thead><tr>
-            <th>Check</th><th>Source</th><th>Target</th><th>Result</th>
-            <th class="num">Count</th><th class="num">Avg</th><th class="num">Max</th>
+            <th>Check</th><th>Source</th><th>Spell</th><th>Target</th><th>Result</th>
+            <th class="num">DC/SR</th><th class="num">Roll</th><th class="num">Bonus</th>
+            <th class="num">Avg Total</th><th class="num">Max</th><th class="num">Count</th>
           </tr></thead>
           <tbody></tbody>
         </table>
@@ -620,7 +621,7 @@ function showAlert(ev) {
   b.style.background = isCrit ? '#3a0a0a' : '#2a2a0a';
   b.style.border = `2px solid ${isCrit ? 'var(--red)' : 'var(--yellow)'}`;
   b.style.color  = isCrit ? 'var(--red)' : 'var(--yellow)';
-  b.textContent  = `⚠ ${ev.alert_level}: ${ev.damage_type.toUpperCase()} immunity ${ev.old_value}% → ${ev.new_value}% (−${ev.drop_amount}%)`;
+  b.textContent  = `${ev.alert_level}: ${(ev.pc_name || 'Unknown PC')} ${ev.damage_type.toUpperCase()} immunity ${ev.old_value}% -> ${ev.new_value}% (-${ev.drop_amount}%)`;
   clearTimeout(_alertTimeout);
   _alertTimeout = setTimeout(() => b.remove(), 12000);
 }
@@ -887,11 +888,15 @@ async function refreshSpellChecks(selector) {
   tbody.innerHTML = rows.map(r => `<tr>
     <td style="color:var(--purple)">${esc(r.check_type)}</td>
     <td>${esc(r.source||'—')}</td>
+    <td>${esc(r.spell_name||'-')}</td>
     <td>${esc(r.target||'—')}</td>
     <td class="${r.result==='success'||r.result==='defeated'?'good':'dead'}">${esc(r.result)}</td>
+    <td class="num">${r.sr_value ?? r.dc ?? '-'}</td>
+    <td class="num">${r.avg_roll ?? '-'}</td>
+    <td class="num">${r.avg_bonus ?? '-'}</td>
+    <td class="num">${r.avg_total ?? '-'}</td>
+    <td class="num">${r.max_total ?? '-'}</td>
     <td class="num">${r.count}</td>
-    <td class="num">${r.avg_val||'—'}</td>
-    <td class="num">${r.max_val||'—'}</td>
   </tr>`).join('');
 }
 
@@ -925,7 +930,7 @@ async function refreshSpells() {
   document.querySelector('#spell-saves-table tbody').innerHTML = sf.slice(0, 30).map(r => `<tr>
     <td>${esc(r.target||'?')}</td>
     <td class="warn">${esc(r.save_type||'?')}</td>
-    <td style="color:var(--muted)">${esc((r.vs_source||'—').substring(0,30))}</td>
+    <td style="color:var(--muted)">${esc((r.source_spell||r.vs_source||'-').substring(0,30))}</td>
     <td class="num dead">${r.dc||'?'}</td>
     <td class="num">${r.roll||'?'}</td>
     <td class="num">${r.bonus||'?'}</td>
@@ -944,28 +949,34 @@ async function refreshStatus() {
   document.getElementById('current-area').textContent =
     d.current_area ? 'Area: ' + d.current_area : 'Area: unknown';
 
-  const imm = d.immunity || {};
+  const immunities = (d.immunities && d.immunities.length) ? d.immunities : (d.immunity && Object.keys(d.immunity).length ? [d.immunity] : []);
   const dmgTypes = [
     'bludgeoning','piercing','slashing','magical','acid','cold',
     'divine','electrical','fire','negative','positive','sonic',
     'subdual','ectoplasmic','psionic','sacred','vile','primal','anarchic','axiomatic'
   ];
   const grid = document.getElementById('imm-grid');
-  if (!Object.keys(imm).length) {
-    grid.innerHTML = '<div style="color:var(--muted);font-size:0.85em">No immunity data yet — enter a zone to trigger the block.</div>';
+  if (!immunities.length) {
+    grid.innerHTML = '<div style="color:var(--muted);font-size:0.85em">No immunity data yet - enter a zone to trigger the block.</div>';
   } else {
-    grid.innerHTML = dmgTypes.map(t => {
-      const pct = imm['imm_' + t] ?? null;
-      const dr  = imm['res_' + t] ?? 0;
-      if (pct === null) return '';
-      const cls   = pct < 20 ? 'imm-danger' : pct < 50 ? 'imm-warn' : 'imm-good';
-      const color = pct >= 100 ? 'var(--green)' : pct >= 50 ? 'var(--yellow)' : pct < 0 ? 'var(--red)' : 'var(--text)';
-      return `<div class="imm-cell ${cls}">
-        <div class="dtype">${t}</div>
-        <div class="ipct" style="color:${color}">${pct}%</div>
-        ${dr ? `<div class="idr">${dr}/- DR</div>` : ''}
-      </div>`;
-    }).join('');
+    grid.innerHTML = immunities.map(imm => `
+      <div style="width:100%;grid-column:1/-1;color:var(--accent);font-weight:700;margin-top:8px;">
+        ${esc(imm.pc_name || 'Unknown PC')}
+        <span style="color:var(--muted);font-weight:400;font-size:0.85em">${esc((imm.ts||'').substring(11,19))}</span>
+      </div>
+      ${dmgTypes.map(t => {
+        const pct = imm['imm_' + t] ?? null;
+        const dr  = imm['res_' + t] ?? 0;
+        if (pct === null) return '';
+        const cls   = pct < 20 ? 'imm-danger' : pct < 50 ? 'imm-warn' : 'imm-good';
+        const color = pct >= 100 ? 'var(--green)' : pct >= 50 ? 'var(--yellow)' : pct < 0 ? 'var(--red)' : 'var(--text)';
+        return `<div class="imm-cell ${cls}">
+          <div class="dtype">${t}</div>
+          <div class="ipct" style="color:${color}">${pct}%</div>
+          ${dr ? `<div class="idr">${dr}/- DR</div>` : ''}
+        </div>`;
+      }).join('')}
+    `).join('');
   }
 
   // Debuff alerts
@@ -973,9 +984,10 @@ async function refreshStatus() {
   document.getElementById('debuff-alerts').innerHTML = alerts.length
     ? alerts.map(a => `
         <div class="alert-row alert-${a.alert_level}">
-          <strong>${a.alert_level}</strong> — ${a.damage_type.toUpperCase()}
+          <strong>${a.alert_level}</strong> - ${esc(a.pc_name || 'Unknown PC')} ${a.damage_type.toUpperCase()}
           immunity ${a.old_value}% → ${a.new_value}%
           (${a.drop_amount > 0 ? '-' : '+'}${Math.abs(a.drop_amount)}%)
+          ${a.reason ? `<div style="color:var(--muted);font-size:0.8em">${esc(a.reason)}</div>` : ''}
           <span style="color:var(--muted);font-size:0.77em;float:right">${(a.ts||'').substring(11,19)}</span>
         </div>`).join('')
     : '<div style="color:var(--green);font-size:0.85em">No debuff drops detected.</div>';

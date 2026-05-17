@@ -103,22 +103,41 @@ def api_pc_status():
     conn = sqlite3.connect(COMBAT_DB)
     conn.row_factory = sqlite3.Row
     sid = request.args.get('session')
-    where = f'AND session_id={sid}' if sid else ''
-    row = conn.execute(
-        f'SELECT * FROM pc_status WHERE 1 {where} ORDER BY id DESC LIMIT 1'
-    ).fetchone()
+    params = []
+    where = ''
+    if sid:
+        where = 'AND session_id=?'
+        params.append(int(sid))
+    rows = conn.execute(
+        f'''
+        SELECT ps.*
+        FROM pc_status ps
+        JOIN (
+          SELECT pc_name, MAX(id) AS id
+          FROM pc_status
+          WHERE 1 {where}
+          GROUP BY pc_name
+        ) latest ON latest.id=ps.id
+        ORDER BY ps.pc_name
+        ''',
+        params,
+    ).fetchall()
     pcs = conn.execute(
         'SELECT name, first_seen, last_seen, source FROM detected_pcs ORDER BY last_seen DESC LIMIT 50'
     ).fetchall()
     alerts = conn.execute(
-        f'SELECT * FROM debuff_alerts WHERE 1 {where} ORDER BY id DESC LIMIT 20'
+        f'SELECT * FROM debuff_alerts WHERE 1 {where} ORDER BY id DESC LIMIT 20',
+        params,
     ).fetchall()
     area = conn.execute(
-        f'SELECT area_name FROM area_log WHERE 1 {where} ORDER BY id DESC LIMIT 1'
+        f'SELECT area_name FROM area_log WHERE 1 {where} ORDER BY id DESC LIMIT 1',
+        params,
     ).fetchone()
     conn.close()
+    immunities = [dict(r) for r in rows]
     return jsonify({
-        'immunity': dict(row) if row else {},
+        'immunity': immunities[0] if immunities else {},
+        'immunities': immunities,
         'pcs': [dict(r) for r in pcs],
         'alerts': [dict(r) for r in alerts],
         'current_area': area['area_name'] if area else '',
