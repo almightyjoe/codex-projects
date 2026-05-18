@@ -1215,10 +1215,32 @@ async function serviceAction(action) {
     setLive(action === 'stop' ? false : true);
     const svc = document.getElementById('service-status');
     if (svc) svc.innerHTML = `<strong>${esc(labels[action])}:</strong> ${esc(d.message || 'ok')}`;
-    if (action === 'restart') setTimeout(() => location.reload(), 4500);
+    if (action === 'restart') waitForRestart();
   } catch (e) {
     alert('Service command failed: ' + e);
   }
+}
+
+async function waitForRestart() {
+  const svc = document.getElementById('service-status');
+  const started = Date.now();
+  const poll = async () => {
+    try {
+      const r = await fetch('/api/service/status?restart_check=' + Date.now(), { cache: 'no-store' });
+      if (r.ok) {
+        if (svc) svc.innerHTML = '<strong>Restart:</strong> server is back online';
+        location.reload();
+        return;
+      }
+    } catch (e) {}
+    if (Date.now() - started < 45000) {
+      if (svc) svc.innerHTML = '<strong>Restart:</strong> waiting for server to come back...';
+      setTimeout(poll, 1500);
+    } else if (svc) {
+      svc.innerHTML = '<strong>Restart:</strong> still offline; run start_nwn_ai.bat if it does not return.';
+    }
+  };
+  setTimeout(poll, 2500);
 }
 
 async function repairBestiary() {

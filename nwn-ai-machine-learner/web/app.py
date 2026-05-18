@@ -48,12 +48,23 @@ def _bestiary_counts():
 
 
 def _spawn_restart():
-    python_exe = sys.executable
-    cmd = f'timeout /t 2 /nobreak >nul & "{python_exe}" main.py'
+    helper = os.path.join(BASE_DIR, 'restart_service.py')
+    args = [sys.executable, helper, str(os.getpid()), str(WEB_PORT), BASE_DIR]
     flags = 0
     if os.name == 'nt':
         flags = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS
-    subprocess.Popen(['cmd', '/c', cmd], cwd=BASE_DIR, creationflags=flags)
+    log_path = os.path.join(BASE_DIR, 'data', 'restart_service.log')
+    os.makedirs(os.path.dirname(log_path), exist_ok=True)
+    log = open(log_path, 'a', encoding='utf-8')
+    subprocess.Popen(
+        args,
+        cwd=BASE_DIR,
+        stdin=subprocess.DEVNULL,
+        stdout=log,
+        stderr=subprocess.STDOUT,
+        creationflags=flags,
+        close_fds=True,
+    )
 
 
 # ---------------------------------------------------------------------------
