@@ -152,6 +152,77 @@ def save_summary(session_id=None) -> list[dict]:
     return [dict(r) for r in rows]
 
 
+def pc_save_pressure(session_id=None, limit: int = 80) -> list[dict]:
+    """PC save/check pressure by target, save type, source, and DC."""
+    conn = _cdb()
+    where = 'WHERE target_is_pc=1'
+    params = []
+    if session_id:
+        where += ' AND session_id=?'
+        params.append(session_id)
+    rows = conn.execute(f'''
+        SELECT target, save_type, check_type, vs_source, dc,
+               COUNT(*) AS total,
+               SUM(CASE WHEN result IN ('success','automatic success','immune') THEN 1 ELSE 0 END) AS passed,
+               SUM(CASE WHEN result IN ('failure','automatic failure') THEN 1 ELSE 0 END) AS failed,
+               ROUND(100.0 * SUM(CASE WHEN result IN ('failure','automatic failure') THEN 1 ELSE 0 END)
+                     / COUNT(*), 0) AS fail_pct,
+               ROUND(AVG(bonus), 1) AS avg_bonus,
+               MAX(total) AS max_total,
+               MAX(ts) AS latest_ts
+        FROM saves {where}
+        GROUP BY target, save_type, check_type, vs_source, dc
+        ORDER BY failed DESC, dc DESC, total DESC, latest_ts DESC
+        LIMIT ?
+    ''', params + [limit]).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def monster_save_summary(session_id=None, limit: int = 100) -> list[dict]:
+    """Monster saves/checks against PC effects, grouped for fast scanning."""
+    conn = _cdb()
+    where = 'WHERE target_is_pc=0'
+    params = []
+    if session_id:
+        where += ' AND session_id=?'
+        params.append(session_id)
+    rows = conn.execute(f'''
+        SELECT target, save_type, check_type, vs_source, dc,
+               COUNT(*) AS total,
+               SUM(CASE WHEN result IN ('success','automatic success','immune') THEN 1 ELSE 0 END) AS passed,
+               SUM(CASE WHEN result IN ('failure','automatic failure') THEN 1 ELSE 0 END) AS failed,
+               ROUND(100.0 * SUM(CASE WHEN result IN ('failure','automatic failure') THEN 1 ELSE 0 END)
+                     / COUNT(*), 0) AS fail_pct,
+               ROUND(AVG(bonus), 1) AS avg_bonus,
+               MAX(total) AS max_total,
+               MAX(ts) AS latest_ts
+        FROM saves {where}
+        GROUP BY target, save_type, check_type, vs_source, dc
+        ORDER BY failed DESC, total DESC, dc DESC, latest_ts DESC
+        LIMIT ?
+    ''', params + [limit]).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def recent_monster_saves(session_id=None, limit: int = 80) -> list[dict]:
+    """Recent monster save/check outcomes."""
+    conn = _cdb()
+    where = 'WHERE target_is_pc=0'
+    params = []
+    if session_id:
+        where += ' AND session_id=?'
+        params.append(session_id)
+    rows = conn.execute(f'''
+        SELECT ts, target, save_type, check_type, vs_source, result, dc, roll, bonus, total
+        FROM saves {where}
+        ORDER BY id DESC LIMIT ?
+    ''', params + [limit]).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
 def dangerous_dc_sources(session_id=None) -> list[dict]:
     """What save DCs are causing the most trouble?"""
     return save_failures(session_id=session_id, limit=20)

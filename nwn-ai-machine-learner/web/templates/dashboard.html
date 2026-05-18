@@ -130,6 +130,17 @@
   .sfail-save { color: var(--yellow); flex-shrink: 0; width: 55px; }
   .sfail-dc  { color: var(--red); flex-shrink: 0; width: 45px; }
   .sfail-src { color: var(--muted); overflow: hidden; text-overflow: ellipsis; }
+  .save-grid { display: grid; grid-template-columns: 64px minmax(85px,1fr) minmax(130px,1.1fr) 54px minmax(150px,1.4fr) 62px 62px; gap: 8px; align-items: center;
+               padding: 3px 6px; border-bottom: 1px solid #1a1d26; font-size: 0.88em; }
+  .save-grid:hover { background: #1a1d26; }
+  .save-grid .clip { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .save-head { color: var(--muted); font-size: 0.77em; text-transform: uppercase; letter-spacing: 1px; }
+  .save-detail { display: none; grid-column: 1 / -1; color: var(--muted); white-space: normal; padding: 3px 0 5px 72px; }
+  .save-grid.open .save-detail { display: block; }
+  .save-card-scroll { max-height: 360px; overflow: auto; }
+  .save-tabs { display:flex; gap:6px; margin-bottom:8px; }
+  .mini-tab { background: var(--bg); border:1px solid var(--border); color:var(--muted); border-radius:3px; padding:2px 8px; cursor:pointer; font-family:inherit; }
+  .mini-tab.active { border-color:var(--accent); color:var(--accent); }
 
   /* TABLES */
   table { width: 100%; border-collapse: collapse; }
@@ -368,40 +379,39 @@
 
 <!-- ── SAVES ── -->
 <div class="tab-panel" id="tab-saves">
-  <div class="card w-half">
-    <h3>Save Type Summary (PCs)</h3>
-    <table id="save-sum-table">
-      <thead><tr>
-        <th>Type</th><th>Check</th>
-        <th class="num">Pass</th><th class="num">Fail</th><th class="num">Fail%</th>
-        <th class="num">Max DC</th><th class="num">Avg DC</th><th>Source</th>
-      </tr></thead>
-      <tbody></tbody>
-    </table>
+  <div class="card w-full">
+    <h3>PC Save Pressure By Character / Source</h3>
+    <div id="pc-save-pressure" class="save-card-scroll"></div>
   </div>
   <div class="card w-half">
     <h3>Recent PC Save Failures</h3>
-    <div id="save-fail-rolling" class="tbl-scroll" style="max-height:300px;"></div>
+    <div id="save-fail-rolling" class="save-card-scroll"></div>
   </div>
   <div class="card w-half">
     <h3>Worst DC Sources</h3>
-    <table id="save-fail-table">
-      <thead><tr>
-        <th>Save</th><th>Check</th><th>Source</th>
-        <th class="num">DC</th><th class="num">Fails</th><th class="num">Avg Bonus</th>
-      </tr></thead>
-      <tbody></tbody>
-    </table>
+    <div id="save-fail-table" class="save-card-scroll"></div>
   </div>
-  <div class="card w-half">
+  <div class="card w-full">
+    <h3>Monster Save Checks Against PC Effects</h3>
+    <div class="save-tabs">
+      <button class="mini-tab active" id="monster-save-summary-btn" onclick="setMonsterSaveView('summary')">Summary</button>
+      <button class="mini-tab" id="monster-save-recent-btn" onclick="setMonsterSaveView('recent')">Recent</button>
+    </div>
+    <div id="monster-save-summary" class="save-card-scroll"></div>
+    <div id="monster-save-recent" class="save-card-scroll" style="display:none;"></div>
+  </div>
+  <div class="card w-full">
     <h3>Spell Checks (SR / SP / Turn / Dispel)</h3>
-    <table id="spell-check-table">
-      <thead><tr>
-        <th>Type</th><th>Source</th><th>Target</th><th>Result</th>
-        <th class="num">Count</th><th class="num">Avg Val</th><th class="num">Max Val</th>
-      </tr></thead>
-      <tbody></tbody>
-    </table>
+    <div class="tbl-scroll">
+      <table id="spell-check-table">
+        <thead><tr>
+          <th>Check</th><th>Source</th><th>Spell</th><th>Target</th><th>Result</th>
+          <th class="num">DC/SR</th><th class="num">Roll</th><th class="num">Bonus</th>
+          <th class="num">Avg Total</th><th class="num">Max</th><th class="num">Count</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
   </div>
 </div>
 
@@ -933,6 +943,95 @@ function prependSaveFailRow(ev, elId) {
   el.insertAdjacentHTML('afterbegin', saveFRHtml(ev));
   // trim to 60 rows
   while (el.children.length > 60) el.lastChild.remove();
+}
+
+async function refreshSaves() {
+  const s = qs();
+  const pc = await (await fetch('/api/pc_save_pressure' + s)).json();
+  document.getElementById('pc-save-pressure').innerHTML = renderSaveGrid(pc, { targetLabel:'PC' });
+  await refreshSaveFailRolling();
+  const wf = await (await fetch('/api/save_failures' + s)).json();
+  document.getElementById('save-fail-table').innerHTML = renderWorstSaveSources(wf);
+  const ms = await (await fetch('/api/monster_save_summary' + s)).json();
+  document.getElementById('monster-save-summary').innerHTML = renderSaveGrid(ms, { targetLabel:'Mob' });
+  const mr = await (await fetch('/api/monster_saves_recent' + s)).json();
+  document.getElementById('monster-save-recent').innerHTML = renderRecentMonsterSaves(mr);
+  await refreshSpellChecks('#spell-check-table tbody');
+}
+
+function renderSaveGrid(rows, opts={}) {
+  if (!rows.length) return '<div style="color:var(--muted);font-size:0.85em">No save/check data yet.</div>';
+  const targetLabel = opts.targetLabel || 'Target';
+  const head = `<div class="save-grid save-head">
+    <div>Latest</div><div>${targetLabel}</div><div>Save / Check</div><div>DC</div><div>Source</div><div>Pass</div><div>Fail</div>
+  </div>`;
+  return head + rows.map(r => {
+    const total = r.total || ((r.passed||0) + (r.failed||0));
+    const failPct = r.fail_pct ?? (total ? Math.round(100 * (r.failed||0) / total) : 0);
+    return `<div class="save-grid" onclick="this.classList.toggle('open')">
+      <div class="clip" style="color:var(--muted)">${(r.latest_ts||r.ts||'').substring(11,19)}</div>
+      <div class="clip" style="color:var(--accent)" title="${esc(r.target||'')}">${esc(r.target||'?')}</div>
+      <div class="clip" style="color:var(--yellow)" title="${esc(r.save_type||'')}">${esc(r.save_type||'?')} <span style="color:var(--muted)">${esc(r.check_type||'save')}</span></div>
+      <div class="num dead">${r.dc ?? '?'}</div>
+      <div class="clip" style="color:var(--muted)" title="${esc(r.vs_source||'')}">${esc(r.vs_source||'-')}</div>
+      <div class="num good">${r.passed ?? 0}</div>
+      <div class="num ${failPct>=50?'dead':failPct>=25?'warn':''}">${r.failed ?? 0} (${failPct}%)</div>
+      <div class="save-detail">Total ${total}; avg bonus ${r.avg_bonus ?? '-'}; max total ${r.max_total ?? '-'}; source ${esc(r.vs_source||'-')}.</div>
+    </div>`;
+  }).join('');
+}
+
+function renderWorstSaveSources(rows) {
+  if (!rows.length) return '<div style="color:var(--muted);font-size:0.85em">No failed PC saves.</div>';
+  const head = `<div class="save-grid save-head">
+    <div></div><div>Save</div><div>Check</div><div>DC</div><div>Source</div><div>Fails</div><div>Bonus</div>
+  </div>`;
+  return head + rows.map(r => `<div class="save-grid" onclick="this.classList.toggle('open')">
+    <div></div><div class="clip" style="color:var(--yellow)">${esc(r.save_type)}</div>
+    <div class="clip" style="color:var(--muted)">${esc(r.check_type||'save')}</div>
+    <div class="num dead">${r.dc||'?'}</div>
+    <div class="clip" style="color:var(--muted)" title="${esc(r.vs_source||'')}">${esc(r.vs_source||'-')}</div>
+    <div class="num dead">${r.fail_count}</div>
+    <div class="num">${r.avg_bonus ? Math.round(r.avg_bonus) : '-'}</div>
+    <div class="save-detail">This source caused ${r.fail_count} failed PC save/check result(s) at DC ${r.dc || '?'}.</div>
+  </div>`).join('');
+}
+
+function renderRecentMonsterSaves(rows) {
+  if (!rows.length) return '<div style="color:var(--muted);font-size:0.85em">No monster save/check data yet.</div>';
+  const head = `<div class="save-grid save-head">
+    <div>Time</div><div>Mob</div><div>Save / Check</div><div>DC</div><div>Source</div><div>Roll</div><div>Result</div>
+  </div>`;
+  return head + rows.map(r => `<div class="save-grid" onclick="this.classList.toggle('open')">
+    <div style="color:var(--muted)">${(r.ts||'').substring(11,19)}</div>
+    <div class="clip" style="color:var(--accent)" title="${esc(r.target||'')}">${esc(r.target||'?')}</div>
+    <div class="clip" style="color:var(--yellow)">${esc(r.save_type||'?')} <span style="color:var(--muted)">${esc(r.check_type||'save')}</span></div>
+    <div class="num dead">${r.dc ?? '?'}</div>
+    <div class="clip" style="color:var(--muted)" title="${esc(r.vs_source||'')}">${esc(r.vs_source||'-')}</div>
+    <div class="num">${r.roll ?? '-'}+${r.bonus ?? '-'}</div>
+    <div class="${['failure','automatic failure'].includes(r.result)?'dead':'good'}">${esc(r.result||'?')}</div>
+    <div class="save-detail">Total ${r.total ?? '-'} vs DC ${r.dc ?? '?'} from ${esc(r.vs_source||'-')}.</div>
+  </div>`).join('');
+}
+
+function setMonsterSaveView(view) {
+  document.getElementById('monster-save-summary').style.display = view === 'summary' ? '' : 'none';
+  document.getElementById('monster-save-recent').style.display = view === 'recent' ? '' : 'none';
+  document.getElementById('monster-save-summary-btn').classList.toggle('active', view === 'summary');
+  document.getElementById('monster-save-recent-btn').classList.toggle('active', view === 'recent');
+}
+
+function saveFRHtml(r) {
+  return `<div class="save-grid" onclick="this.classList.toggle('open')">
+    <span style="color:var(--muted)">${(r.ts||'').substring(11,19)}</span>
+    <span class="clip" style="color:var(--accent)" title="${esc(r.target||'')}">${esc(r.target||'?')}</span>
+    <span class="clip" style="color:var(--yellow)">${esc(r.save_type||'?')} <span style="color:var(--muted)">${esc(r.check_type||'save')}</span></span>
+    <span class="num dead">${r.dc||'?'}</span>
+    <span class="clip" style="color:var(--muted)" title="${esc(r.vs_source||'')}">${esc(r.vs_source||'-')}</span>
+    <span class="num">${r.roll ?? '-'}</span>
+    <span class="num">${r.total ?? '-'}</span>
+    <span class="save-detail">Bonus ${r.bonus ?? '-'}; source spell/read ${esc(r.source_spell||r.vs_source||'-')}.</span>
+  </div>`;
 }
 
 async function refreshSpellChecks(selector) {

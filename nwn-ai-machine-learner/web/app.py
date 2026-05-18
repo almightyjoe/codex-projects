@@ -17,6 +17,7 @@ from query.sql_queries import (
     bard_signal_summary,
     damage_breakdown, accuracy_detail, spell_check_summary,
     recent_save_failures, pc_kill_detail,
+    pc_save_pressure, monster_save_summary, recent_monster_saves,
 )
 from query.ai_query import ask, ollama_status
 from parser.learning import analyze_unparsed
@@ -108,6 +109,24 @@ def api_kills_by_mob():
 def api_save_summary():
     sid = request.args.get('session')
     return jsonify(save_summary(int(sid) if sid else None))
+
+
+@app.route('/api/pc_save_pressure')
+def api_pc_save_pressure():
+    sid = request.args.get('session')
+    return jsonify(pc_save_pressure(int(sid) if sid else None))
+
+
+@app.route('/api/monster_save_summary')
+def api_monster_save_summary():
+    sid = request.args.get('session')
+    return jsonify(monster_save_summary(int(sid) if sid else None))
+
+
+@app.route('/api/monster_saves_recent')
+def api_monster_saves_recent():
+    sid = request.args.get('session')
+    return jsonify(recent_monster_saves(int(sid) if sid else None))
 
 
 @app.route('/api/save_failures')
