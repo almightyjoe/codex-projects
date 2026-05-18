@@ -15,6 +15,7 @@ from query.sql_queries import (
     session_list, mob_damage_dealt, pc_damage_dealt, attack_accuracy,
     area_threat_summary, creature_list, spell_usage_summary, bard_songs_summary,
     bard_signal_summary,
+    spell_cast_analysis, recent_spell_casts, spell_check_analysis,
     damage_breakdown, accuracy_detail, spell_check_summary,
     recent_save_failures, pc_kill_detail,
     pc_save_pressure, monster_save_summary, recent_monster_saves,
@@ -295,6 +296,30 @@ def api_bestiary_repair():
 def api_spells():
     sid = request.args.get('session')
     return jsonify(spell_usage_summary(int(sid) if sid else None))
+
+
+@app.route('/api/spell_cast_analysis')
+def api_spell_cast_analysis():
+    sid = request.args.get('session')
+    side = request.args.get('side', '')
+    caster_is_pc = 1 if side == 'pc' else 0 if side == 'mob' else None
+    return jsonify(spell_cast_analysis(int(sid) if sid else None, caster_is_pc))
+
+
+@app.route('/api/spell_casts_recent')
+def api_spell_casts_recent():
+    sid = request.args.get('session')
+    side = request.args.get('side', '')
+    caster_is_pc = 1 if side == 'pc' else 0 if side == 'mob' else None
+    return jsonify(recent_spell_casts(int(sid) if sid else None, caster_is_pc))
+
+
+@app.route('/api/spell_check_analysis')
+def api_spell_check_analysis():
+    sid = request.args.get('session')
+    side = request.args.get('side', '')
+    source_is_pc = 1 if side == 'pc' else 0 if side == 'mob' else None
+    return jsonify(spell_check_analysis(int(sid) if sid else None, source_is_pc))
 
 
 @app.route('/api/songs')

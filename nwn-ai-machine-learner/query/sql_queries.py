@@ -278,7 +278,7 @@ def pc_damage_dealt(pc_name: str = None, session_id=None) -> list[dict]:
 def spell_usage_summary(session_id=None, limit=20) -> list[dict]:
     """Top spells/songs cast, by caster."""
     conn = _cdb()
-    where = 'WHERE 1'
+    where = "WHERE caster NOT LIKE ':%Tell%'"
     params = []
     if session_id:
         where += ' AND session_id=?'
@@ -289,6 +289,102 @@ def spell_usage_summary(session_id=None, limit=20) -> list[dict]:
         FROM spells {where}
         GROUP BY caster, spell_name
         ORDER BY cast_count DESC LIMIT ?
+    ''', params + [limit]).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def spell_cast_analysis(session_id=None, caster_is_pc: int | None = None, limit: int = 80) -> list[dict]:
+    """Spell casting grouped by caster/spell with related check pressure."""
+    conn = _cdb()
+    where = "WHERE caster NOT LIKE ':%Tell%'"
+    params = []
+    if caster_is_pc is not None:
+        where += ' AND caster_is_pc=?'
+        params.append(caster_is_pc)
+    if session_id:
+        where += ' AND session_id=?'
+        params.append(session_id)
+    rows = conn.execute(f'''
+        SELECT caster, spell_name, is_song, caster_is_pc,
+               COUNT(*) AS cast_count,
+               MAX(ts) AS latest_ts,
+               (
+                 SELECT COUNT(*)
+                 FROM spell_checks sc
+                 WHERE sc.source=sp.caster
+                   AND (sc.spell_name=sp.spell_name OR sc.spell_name='' OR sp.spell_name='')
+                   AND (? IS NULL OR sc.session_id=?)
+               ) AS check_count,
+               (
+                 SELECT SUM(CASE WHEN result IN ('failure','resisted','immune','absorbed') THEN 1 ELSE 0 END)
+                 FROM spell_checks sc
+                 WHERE sc.source=sp.caster
+                   AND (sc.spell_name=sp.spell_name OR sc.spell_name='' OR sp.spell_name='')
+                   AND (? IS NULL OR sc.session_id=?)
+               ) AS resisted_count,
+               (
+                 SELECT MAX(COALESCE(sr_value, dc, vs_value, total))
+                 FROM spell_checks sc
+                 WHERE sc.source=sp.caster
+                   AND (sc.spell_name=sp.spell_name OR sc.spell_name='' OR sp.spell_name='')
+                   AND (? IS NULL OR sc.session_id=?)
+               ) AS max_check_value
+        FROM spells sp {where}
+        GROUP BY caster, spell_name, is_song, caster_is_pc
+        ORDER BY cast_count DESC, latest_ts DESC
+        LIMIT ?
+    ''', [session_id, session_id, session_id, session_id, session_id, session_id] + params + [limit]).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def recent_spell_casts(session_id=None, caster_is_pc: int | None = None, limit: int = 80) -> list[dict]:
+    """Recent spell casts by side."""
+    conn = _cdb()
+    where = "WHERE caster NOT LIKE ':%Tell%'"
+    params = []
+    if caster_is_pc is not None:
+        where += ' AND caster_is_pc=?'
+        params.append(caster_is_pc)
+    if session_id:
+        where += ' AND session_id=?'
+        params.append(session_id)
+    rows = conn.execute(f'''
+        SELECT ts, caster, spell_name, action, is_song, caster_is_pc
+        FROM spells {where}
+        ORDER BY id DESC LIMIT ?
+    ''', params + [limit]).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def spell_check_analysis(session_id=None, source_is_pc: int | None = None, limit: int = 80) -> list[dict]:
+    """SR/SP/turn/dispel checks split by PC or monster source when known."""
+    conn = _cdb()
+    pc_clause = ''
+    params = []
+    if source_is_pc is not None:
+        op = 'IN' if source_is_pc else 'NOT IN'
+        pc_clause = f' AND source {op} (SELECT name FROM detected_pcs)'
+    sid = ''
+    if session_id:
+        sid = ' AND session_id=?'
+        params.append(session_id)
+    rows = conn.execute(f'''
+        SELECT check_type, source, target, spell_name, result,
+               COALESCE(sr_value, dc, vs_value) AS dc_sr,
+               COUNT(*) AS count,
+               ROUND(AVG(roll),1) AS avg_roll,
+               ROUND(AVG(bonus),1) AS avg_bonus,
+               ROUND(AVG(total),1) AS avg_total,
+               MAX(total) AS max_total,
+               MAX(ts) AS latest_ts
+        FROM spell_checks
+        WHERE 1 {pc_clause} {sid}
+        GROUP BY check_type, source, target, spell_name, result, dc_sr
+        ORDER BY count DESC, latest_ts DESC
+        LIMIT ?
     ''', params + [limit]).fetchall()
     conn.close()
     return [dict(r) for r in rows]

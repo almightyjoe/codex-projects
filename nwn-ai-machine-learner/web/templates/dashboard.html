@@ -302,8 +302,10 @@
 <div id="tabs">
   <div class="tab active" data-tab="live">Live Feed</div>
   <div class="tab" data-tab="damage">Damage</div>
-  <div class="tab" data-tab="saves">Saves</div>
-  <div class="tab" data-tab="spells">Spells</div>
+  <div class="tab" data-tab="saves">PC Saves</div>
+  <div class="tab" data-tab="monstersaves">Monster Saves</div>
+  <div class="tab" data-tab="spells">PC Spells</div>
+  <div class="tab" data-tab="mobspells">Monster Spells</div>
   <div class="tab" data-tab="status">PC Status</div>
   <div class="tab" data-tab="bestiary">Bestiary</div>
   <div class="tab" data-tab="ai">AI Query</div>
@@ -392,15 +394,6 @@
     <div id="save-fail-table" class="save-card-scroll"></div>
   </div>
   <div class="card w-full">
-    <h3>Monster Save Checks Against PC Effects</h3>
-    <div class="save-tabs">
-      <button class="mini-tab active" id="monster-save-summary-btn" onclick="setMonsterSaveView('summary')">Summary</button>
-      <button class="mini-tab" id="monster-save-recent-btn" onclick="setMonsterSaveView('recent')">Recent</button>
-    </div>
-    <div id="monster-save-summary" class="save-card-scroll"></div>
-    <div id="monster-save-recent" class="save-card-scroll" style="display:none;"></div>
-  </div>
-  <div class="card w-full">
     <h3>Spell Checks (SR / SP / Turn / Dispel)</h3>
     <div class="tbl-scroll">
       <table id="spell-check-table">
@@ -416,16 +409,26 @@
 </div>
 
 <!-- ── SPELLS ── -->
+<div class="tab-panel" id="tab-monstersaves">
+  <div class="card w-full">
+    <h3>Monster Save Checks Against PC Effects</h3>
+    <div class="save-tabs">
+      <button class="mini-tab active" id="monster-save-summary-btn" onclick="setMonsterSaveView('summary')">Summary</button>
+      <button class="mini-tab" id="monster-save-recent-btn" onclick="setMonsterSaveView('recent')">Recent</button>
+    </div>
+    <div id="monster-save-summary" class="save-card-scroll"></div>
+    <div id="monster-save-recent" class="save-card-scroll" style="display:none;"></div>
+  </div>
+</div>
+
 <div class="tab-panel" id="tab-spells">
-  <div class="card w-half">
-    <h3>Spells Cast</h3>
-    <table id="spells-table">
-      <thead><tr>
-        <th>Caster</th><th>Spell</th>
-        <th class="num">Cast</th><th>Type</th>
-      </tr></thead>
-      <tbody></tbody>
-    </table>
+  <div class="card w-full">
+    <h3>PC Spell Cast Analysis</h3>
+    <div id="pc-spell-analysis" class="save-card-scroll"></div>
+  </div>
+  <div class="card w-full">
+    <h3>Recent PC Spell Casts</h3>
+    <div id="pc-spell-recent" class="save-card-scroll"></div>
   </div>
   <div class="card w-half">
     <h3>Bard Song / Curse Signals</h3>
@@ -463,6 +466,21 @@
 </div>
 
 <!-- ── PC STATUS ── -->
+<div class="tab-panel" id="tab-mobspells">
+  <div class="card w-full">
+    <h3>Monster Spell Cast Analysis</h3>
+    <div id="mob-spell-analysis" class="save-card-scroll"></div>
+  </div>
+  <div class="card w-full">
+    <h3>Recent Monster Spell Casts</h3>
+    <div id="mob-spell-recent" class="save-card-scroll"></div>
+  </div>
+  <div class="card w-full">
+    <h3>Monster Spell Checks / Resistance Results</h3>
+    <div id="mob-spell-checks" class="save-card-scroll"></div>
+  </div>
+</div>
+
 <div class="tab-panel" id="tab-status">
   <div class="card w-full">
     <h3>Current Area &amp; PC Immunities</h3>
@@ -696,7 +714,9 @@ document.querySelectorAll('.tab').forEach(t => {
     document.getElementById('tab-' + t.dataset.tab).classList.add('active');
     if (t.dataset.tab === 'damage')  refreshDamage();
     if (t.dataset.tab === 'saves')   refreshSaves();
+    if (t.dataset.tab === 'monstersaves') refreshMonsterSaves();
     if (t.dataset.tab === 'spells')  refreshSpells();
+    if (t.dataset.tab === 'mobspells') refreshMobSpells();
     if (t.dataset.tab === 'status')  refreshStatus();
     if (t.dataset.tab === 'bestiary' && !_allCreatures.length) loadCreatureList();
   });
@@ -952,11 +972,15 @@ async function refreshSaves() {
   await refreshSaveFailRolling();
   const wf = await (await fetch('/api/save_failures' + s)).json();
   document.getElementById('save-fail-table').innerHTML = renderWorstSaveSources(wf);
+  await refreshSpellChecks('#spell-check-table tbody');
+}
+
+async function refreshMonsterSaves() {
+  const s = qs();
   const ms = await (await fetch('/api/monster_save_summary' + s)).json();
   document.getElementById('monster-save-summary').innerHTML = renderSaveGrid(ms, { targetLabel:'Mob' });
   const mr = await (await fetch('/api/monster_saves_recent' + s)).json();
   document.getElementById('monster-save-recent').innerHTML = renderRecentMonsterSaves(mr);
-  await refreshSpellChecks('#spell-check-table tbody');
 }
 
 function renderSaveGrid(rows, opts={}) {
@@ -1060,14 +1084,10 @@ async function refreshSpellChecks(selector) {
 async function refreshSpells() {
   const s = qs();
 
-  // Spells cast
-  const sp = await (await fetch('/api/spells' + s)).json();
-  document.querySelector('#spells-table tbody').innerHTML = sp.map(r => `<tr>
-    <td>${esc(r.caster)}</td>
-    <td>${esc(r.spell_name)}${r.is_song || r.song_count > 0 ? '<span class="song-chip">SONG</span>' : ''}</td>
-    <td class="num">${r.cast_count}</td>
-    <td style="color:var(--muted);font-size:0.85em">${r.song_count > 0 ? 'song' : 'spell'}</td>
-  </tr>`).join('');
+  const pcSpells = await (await fetch('/api/spell_cast_analysis' + (s ? s + '&side=pc' : '?side=pc'))).json();
+  document.getElementById('pc-spell-analysis').innerHTML = renderSpellCastGrid(pcSpells, 'PC');
+  const pcRecent = await (await fetch('/api/spell_casts_recent' + (s ? s + '&side=pc' : '?side=pc'))).json();
+  document.getElementById('pc-spell-recent').innerHTML = renderRecentSpellCasts(pcRecent);
 
   // Bard song / curse signals
   const bs = await (await fetch('/api/bard_signals' + s)).json();
@@ -1096,6 +1116,67 @@ async function refreshSpells() {
     <td class="num">${r.total||'?'}</td>
     <td style="color:var(--muted);font-size:0.85em">${(r.ts||'').substring(11,19)}</td>
   </tr>`).join('');
+}
+
+async function refreshMobSpells() {
+  const s = qs();
+  const mobSpells = await (await fetch('/api/spell_cast_analysis' + (s ? s + '&side=mob' : '?side=mob'))).json();
+  document.getElementById('mob-spell-analysis').innerHTML = renderSpellCastGrid(mobSpells, 'Mob');
+  const mobRecent = await (await fetch('/api/spell_casts_recent' + (s ? s + '&side=mob' : '?side=mob'))).json();
+  document.getElementById('mob-spell-recent').innerHTML = renderRecentSpellCasts(mobRecent);
+  const checks = await (await fetch('/api/spell_check_analysis' + (s ? s + '&side=mob' : '?side=mob'))).json();
+  document.getElementById('mob-spell-checks').innerHTML = renderSpellCheckGrid(checks);
+}
+
+function renderSpellCastGrid(rows, label) {
+  if (!rows.length) return '<div style="color:var(--muted);font-size:0.85em">No spell casts observed.</div>';
+  const head = `<div class="save-grid save-head">
+    <div>Latest</div><div>${label}</div><div>Spell</div><div>Casts</div><div>Type</div><div>Checks</div><div>Resist</div>
+  </div>`;
+  return head + rows.map(r => `<div class="save-grid" onclick="this.classList.toggle('open')">
+    <div style="color:var(--muted)">${(r.latest_ts||'').substring(11,19)}</div>
+    <div class="clip" style="color:var(--accent)" title="${esc(r.caster||'')}">${esc(r.caster||'?')}</div>
+    <div class="clip" style="color:var(--yellow)" title="${esc(r.spell_name||'')}">${esc(r.spell_name||'?')}</div>
+    <div class="num">${r.cast_count||0}</div>
+    <div>${r.is_song ? '<span class="song-chip">SONG</span>' : 'spell'}</div>
+    <div class="num">${r.check_count||0}</div>
+    <div class="num ${r.resisted_count?'dead':''}">${r.resisted_count||0}</div>
+    <div class="save-detail">Max related check value ${r.max_check_value ?? '-'}; side ${r.caster_is_pc ? 'PC' : 'Mob/Unknown'}.</div>
+  </div>`).join('');
+}
+
+function renderRecentSpellCasts(rows) {
+  if (!rows.length) return '<div style="color:var(--muted);font-size:0.85em">No recent spell casts.</div>';
+  const head = `<div class="save-grid save-head">
+    <div>Time</div><div>Caster</div><div>Spell</div><div></div><div>Action</div><div>Side</div><div>Type</div>
+  </div>`;
+  return head + rows.map(r => `<div class="save-grid" onclick="this.classList.toggle('open')">
+    <div style="color:var(--muted)">${(r.ts||'').substring(11,19)}</div>
+    <div class="clip" style="color:var(--accent)" title="${esc(r.caster||'')}">${esc(r.caster||'?')}</div>
+    <div class="clip" style="color:var(--yellow)" title="${esc(r.spell_name||'')}">${esc(r.spell_name||'?')}</div>
+    <div></div>
+    <div style="color:var(--muted)">${esc(r.action||'')}</div>
+    <div>${r.caster_is_pc ? 'PC' : 'Mob'}</div>
+    <div>${r.is_song ? '<span class="song-chip">SONG</span>' : 'spell'}</div>
+    <div class="save-detail">${esc(r.caster||'?')} ${esc(r.action||'casts')} ${esc(r.spell_name||'?')}.</div>
+  </div>`).join('');
+}
+
+function renderSpellCheckGrid(rows) {
+  if (!rows.length) return '<div style="color:var(--muted);font-size:0.85em">No spell checks observed.</div>';
+  const head = `<div class="save-grid save-head">
+    <div>Latest</div><div>Source</div><div>Spell / Check</div><div>DC/SR</div><div>Target</div><div>Result</div><div>Count</div>
+  </div>`;
+  return head + rows.map(r => `<div class="save-grid" onclick="this.classList.toggle('open')">
+    <div style="color:var(--muted)">${(r.latest_ts||'').substring(11,19)}</div>
+    <div class="clip" style="color:var(--accent)" title="${esc(r.source||'')}">${esc(r.source||'-')}</div>
+    <div class="clip" style="color:var(--yellow)" title="${esc(r.spell_name||r.check_type||'')}">${esc(r.spell_name||'-')} <span style="color:var(--muted)">${esc(r.check_type||'')}</span></div>
+    <div class="num dead">${r.dc_sr ?? '-'}</div>
+    <div class="clip" style="color:var(--muted)" title="${esc(r.target||'')}">${esc(r.target||'-')}</div>
+    <div class="${['success','defeated','dispelled'].includes(r.result)?'good':'dead'}">${esc(r.result||'?')}</div>
+    <div class="num">${r.count||0}</div>
+    <div class="save-detail">Avg roll ${r.avg_roll ?? '-'}, avg bonus ${r.avg_bonus ?? '-'}, avg total ${r.avg_total ?? '-'}, max total ${r.max_total ?? '-'}.</div>
+  </div>`).join('');
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -1437,7 +1518,9 @@ function refreshAll() {
   const t = document.querySelector('.tab.active')?.dataset.tab;
   if (t === 'damage') refreshDamage();
   if (t === 'saves')  refreshSaves();
+  if (t === 'monstersaves') refreshMonsterSaves();
   if (t === 'spells') refreshSpells();
+  if (t === 'mobspells') refreshMobSpells();
   if (t === 'status') refreshStatus();
 }
 
