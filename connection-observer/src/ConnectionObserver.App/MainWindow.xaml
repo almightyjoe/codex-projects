@@ -1,0 +1,74 @@
+<Window x:Class="ConnectionObserver.App.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d"
+        Title="Connection Observer"
+        Height="640"
+        Width="1040"
+        MinHeight="520"
+        MinWidth="840"
+        Background="#F5F7FA">
+    <Grid Margin="24">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="16" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="16" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <DockPanel Grid.Row="0" LastChildFill="False">
+            <StackPanel DockPanel.Dock="Left">
+                <TextBlock Text="Connection Observer" FontSize="28" FontWeight="SemiBold" Foreground="#162033" />
+                <TextBlock Text="Live Windows network activity" Margin="0,4,0,0" Foreground="#526070" />
+            </StackPanel>
+            <Button x:Name="RefreshButton"
+                    DockPanel.Dock="Right"
+                    Width="120"
+                    Height="36"
+                    Click="RefreshButton_Click"
+                    Content="Refresh" />
+        </DockPanel>
+
+        <UniformGrid Grid.Row="2" Columns="3">
+            <Border Background="White" BorderBrush="#DCE2EA" BorderThickness="1" Padding="16" Margin="0,0,12,0">
+                <StackPanel>
+                    <TextBlock Text="Total" Foreground="#526070" />
+                    <TextBlock x:Name="TotalConnectionsText" Text="0" FontSize="28" FontWeight="SemiBold" />
+                </StackPanel>
+            </Border>
+            <Border Background="White" BorderBrush="#DCE2EA" BorderThickness="1" Padding="16" Margin="0,0,12,0">
+                <StackPanel>
+                    <TextBlock Text="TCP" Foreground="#526070" />
+                    <TextBlock x:Name="TcpConnectionsText" Text="0" FontSize="28" FontWeight="SemiBold" />
+                </StackPanel>
+            </Border>
+            <Border Background="White" BorderBrush="#DCE2EA" BorderThickness="1" Padding="16">
+                <StackPanel>
+                    <TextBlock Text="UDP" Foreground="#526070" />
+                    <TextBlock x:Name="UdpConnectionsText" Text="0" FontSize="28" FontWeight="SemiBold" />
+                </StackPanel>
+            </Border>
+        </UniformGrid>
+
+        <DataGrid x:Name="ConnectionsGrid"
+                  Grid.Row="4"
+                  AutoGenerateColumns="False"
+                  IsReadOnly="True"
+                  CanUserAddRows="False"
+                  Background="White"
+                  BorderBrush="#DCE2EA"
+                  BorderThickness="1">
+            <DataGrid.Columns>
+                <DataGridTextColumn Header="Protocol" Binding="{Binding Protocol}" Width="90" />
+                <DataGridTextColumn Header="Local" Binding="{Binding LocalEndpoint}" Width="*" />
+                <DataGridTextColumn Header="Remote" Binding="{Binding RemoteEndpoint}" Width="*" />
+                <DataGridTextColumn Header="State" Binding="{Binding State}" Width="140" />
+                <DataGridTextColumn Header="Process" Binding="{Binding ProcessName}" Width="160" />
+                <DataGridTextColumn Header="Last Seen" Binding="{Binding LastSeen}" Width="180" />
+            </DataGrid.Columns>
+        </DataGrid>
+    </Grid>
+</Window>
