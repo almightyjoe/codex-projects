@@ -2,12 +2,15 @@ using System.Windows;
 using ConnectionObserver.Core.Models;
 using ConnectionObserver.Core.Services;
 using ConnectionObserver.Infrastructure.Network;
+using ConnectionObserver.Infrastructure.Storage;
 
 namespace ConnectionObserver.App;
 
 public partial class MainWindow : Window
 {
     private readonly INetworkSnapshotService _networkSnapshotService = new SystemNetworkSnapshotService();
+    private readonly ConnectionSnapshotMerger _snapshotMerger = new();
+    private readonly SqliteConnectionObserverStore _store = new(AppDataPaths.DefaultDatabasePath);
 
     public MainWindow()
     {
@@ -23,10 +26,16 @@ public partial class MainWindow : Window
     private async Task RefreshConnectionsAsync()
     {
         RefreshButton.IsEnabled = false;
+        StatusText.Text = "Refreshing network activity...";
 
         try
         {
-            var snapshot = await _networkSnapshotService.CaptureAsync();
+            await _store.InitializeAsync();
+
+            var snapshot = _snapshotMerger.ApplyFirstSeen(await _networkSnapshotService.CaptureAsync());
+            await _store.SaveSnapshotAsync(snapshot);
+            await _store.PurgeOlderThanAsync(DateTimeOffset.Now.AddDays(-AppSettings.Default.DataRetentionDays));
+
             TotalConnectionsText.Text = snapshot.Connections.Count.ToString();
             TcpConnectionsText.Text = snapshot.TcpCount.ToString();
             UdpConnectionsText.Text = snapshot.UdpCount.ToString();
@@ -35,6 +44,11 @@ public partial class MainWindow : Window
                 .ThenBy(connection => connection.LocalAddress)
                 .Select(ConnectionRow.FromConnection)
                 .ToList();
+            StatusText.Text = $"Captured {snapshot.Connections.Count} connections at {snapshot.CapturedAt.LocalDateTime:g}";
+        }
+        catch (Exception ex)
+        {
+            StatusText.Text = ex.Message;
         }
         finally
         {
@@ -48,6 +62,7 @@ public partial class MainWindow : Window
         string RemoteEndpoint,
         string State,
         string ProcessName,
+        string ProcessId,
         string LastSeen)
     {
         public static ConnectionRow FromConnection(NetworkConnection connection)
@@ -62,6 +77,7 @@ public partial class MainWindow : Window
                 remote,
                 connection.State,
                 connection.ProcessName ?? string.Empty,
+                connection.ProcessId?.ToString() ?? string.Empty,
                 connection.LastSeen.ToLocalTime().ToString("g"));
         }
     }

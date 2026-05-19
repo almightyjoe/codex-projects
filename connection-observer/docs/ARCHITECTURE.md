@@ -21,6 +21,15 @@ Windows network collection, SQLite persistence, geo-IP providers, firewall integ
 - Background work: tray app or hosted worker process.
 - Privileged operations: separate explicit elevation path for firewall changes.
 
+## Current Core Capabilities
+
+- Captures active TCP connections and UDP listeners.
+- Enriches IPv4 TCP/UDP entries with owning process IDs and process names where Windows allows access.
+- Persists connection snapshots to a local SQLite database.
+- Stores DNS records and user notes.
+- Stores alert rules and alert events.
+- Evaluates basic rules against captured snapshots.
+
 ## Design Bias
 
 The app should prioritize dense, scannable operational views over marketing-style screens. The first screen should show useful network activity immediately.

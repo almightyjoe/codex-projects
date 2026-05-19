@@ -6,8 +6,9 @@ Connection Observer is an original Windows network-visibility tool inspired by t
 
 - .NET 8 solution scaffolded.
 - WPF desktop shell created.
-- Core network connection domain model started.
-- First system snapshot service captures active TCP connections and UDP listeners.
+- Core connection, DNS note, alert rule, and settings models started.
+- Windows snapshot service captures active TCP connections and UDP listeners with process ownership where available.
+- SQLite storage saves connection history, DNS notes, alert rules, and alert events.
 - Unit test project added.
 
 ## Project Layout
@@ -33,8 +34,8 @@ dotnet test
 
 ## Near-Term Goals
 
-1. Add Windows-specific process ownership for TCP/UDP connections.
-2. Add SQLite persistence for connection snapshots, DNS records, notes, and alert events.
-3. Add a tray/background monitor.
-4. Add firewall block/unblock commands through a privileged boundary.
-5. Add geo-IP provider abstraction and map visualization.
+1. Add automatic refresh and a tray/background monitor.
+2. Add DNS event capture instead of manual DNS note storage only.
+3. Add firewall block/unblock commands through a privileged boundary.
+4. Add geo-IP provider abstraction and map visualization.
+5. Add richer process, history, alerts, and settings views.

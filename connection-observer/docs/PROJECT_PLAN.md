@@ -2,14 +2,14 @@
 
 ## Phase 1: Foundation
 
-- Establish solution structure.
-- Capture active TCP and UDP listeners.
-- Introduce domain models for connections, DNS records, alerts, bandwidth samples, and firewall actions.
-- Add unit tests for core models and filtering behavior.
+- Establish solution structure. Done.
+- Capture active TCP and UDP listeners. Done.
+- Introduce domain models for connections, DNS records, alerts, settings, and firewall actions. In progress.
+- Add unit tests for core models, persistence, and filtering behavior. In progress.
 
 ## Phase 2: Windows Network Collection
 
-- Resolve owning process IDs and executable paths.
+- Resolve owning process IDs and executable paths. IPv4 TCP/UDP in progress.
 - Track first-seen and last-seen timestamps across snapshots.
 - Add DNS event capture or cache ingestion.
 - Normalize local, loopback, LAN, and internet destinations.

@@ -22,7 +22,7 @@
         <DockPanel Grid.Row="0" LastChildFill="False">
             <StackPanel DockPanel.Dock="Left">
                 <TextBlock Text="Connection Observer" FontSize="28" FontWeight="SemiBold" Foreground="#162033" />
-                <TextBlock Text="Live Windows network activity" Margin="0,4,0,0" Foreground="#526070" />
+                <TextBlock x:Name="StatusText" Text="Live Windows network activity" Margin="0,4,0,0" Foreground="#526070" />
             </StackPanel>
             <Button x:Name="RefreshButton"
                     DockPanel.Dock="Right"
@@ -67,6 +67,7 @@
                 <DataGridTextColumn Header="Remote" Binding="{Binding RemoteEndpoint}" Width="*" />
                 <DataGridTextColumn Header="State" Binding="{Binding State}" Width="140" />
                 <DataGridTextColumn Header="Process" Binding="{Binding ProcessName}" Width="160" />
+                <DataGridTextColumn Header="PID" Binding="{Binding ProcessId}" Width="90" />
                 <DataGridTextColumn Header="Last Seen" Binding="{Binding LastSeen}" Width="180" />
             </DataGrid.Columns>
         </DataGrid>
