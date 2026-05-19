@@ -4,6 +4,8 @@ namespace ConnectionObserver.Core.Services;
 
 public sealed class AlertEvaluator
 {
+    private readonly HashSet<string> _raisedAlertKeys = new(StringComparer.OrdinalIgnoreCase);
+
     public IReadOnlyList<AlertEvent> Evaluate(ConnectionSnapshot snapshot, IReadOnlyCollection<AlertRule> rules)
     {
         var enabledRules = rules.Where(rule => rule.IsEnabled).ToArray();
@@ -23,6 +25,12 @@ public sealed class AlertEvaluator
                     continue;
                 }
 
+                var alertKey = CreateAlertKey(rule, connection);
+                if (!_raisedAlertKeys.Add(alertKey))
+                {
+                    continue;
+                }
+
                 alerts.Add(new AlertEvent(
                     Guid.NewGuid(),
                     rule.Id,
@@ -34,6 +42,22 @@ public sealed class AlertEvaluator
         }
 
         return alerts;
+    }
+
+    public void ForgetInactiveConnections(IReadOnlyCollection<NetworkConnection> activeConnections)
+    {
+        var activeConnectionKeys = activeConnections
+            .Select(connection => connection.Key.ToString())
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var raisedKey in _raisedAlertKeys.ToArray())
+        {
+            var separatorIndex = raisedKey.IndexOf('|');
+            if (separatorIndex < 0 || !activeConnectionKeys.Contains(raisedKey[(separatorIndex + 1)..]))
+            {
+                _raisedAlertKeys.Remove(raisedKey);
+            }
+        }
     }
 
     private static bool Matches(AlertRule rule, NetworkConnection connection)
@@ -60,5 +84,10 @@ public sealed class AlertEvaluator
     private static bool Contains(string? value, string condition)
     {
         return value?.Contains(condition, StringComparison.OrdinalIgnoreCase) == true;
+    }
+
+    private static string CreateAlertKey(AlertRule rule, NetworkConnection connection)
+    {
+        return $"{rule.Id}|{connection.Key}";
     }
 }

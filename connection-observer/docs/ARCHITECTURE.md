@@ -29,6 +29,8 @@ Windows network collection, SQLite persistence, geo-IP providers, firewall integ
 - Stores DNS records and user notes.
 - Stores alert rules and alert events.
 - Evaluates basic rules against captured snapshots.
+- Suppresses duplicate alerts for the same active rule/connection pair.
+- Provides WPF tabs for live activity, history, DNS notes, alerts, and rule creation.
 
 ## Design Bias
 

@@ -23,4 +23,22 @@ public sealed class AlertEvaluatorTests
         Assert.Single(alerts);
         Assert.Equal(AlertSeverity.Warning, alerts[0].Severity);
     }
+
+    [Fact]
+    public void DoesNotRepeatSameAlertWhileConnectionStaysActive()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var snapshot = new ConnectionSnapshot(now, new[]
+        {
+            new NetworkConnection("TCP", "10.0.0.2", 5000, "8.8.8.8", 443, "Established", "browser", 42, null, null, now, now)
+        });
+        var rules = new[]
+        {
+            new AlertRule(Guid.NewGuid(), AlertRuleType.NewExternalConnection, string.Empty, AlertSeverity.Info, true)
+        };
+        var evaluator = new AlertEvaluator();
+
+        Assert.Single(evaluator.Evaluate(snapshot, rules));
+        Assert.Empty(evaluator.Evaluate(snapshot, rules));
+    }
 }

@@ -5,10 +5,10 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         mc:Ignorable="d"
         Title="Connection Observer"
-        Height="640"
-        Width="1040"
-        MinHeight="520"
-        MinWidth="840"
+        Height="720"
+        Width="1180"
+        MinHeight="620"
+        MinWidth="960"
         Background="#F5F7FA">
     <Grid Margin="24">
         <Grid.RowDefinitions>
@@ -24,15 +24,22 @@
                 <TextBlock Text="Connection Observer" FontSize="28" FontWeight="SemiBold" Foreground="#162033" />
                 <TextBlock x:Name="StatusText" Text="Live Windows network activity" Margin="0,4,0,0" Foreground="#526070" />
             </StackPanel>
-            <Button x:Name="RefreshButton"
-                    DockPanel.Dock="Right"
-                    Width="120"
-                    Height="36"
-                    Click="RefreshButton_Click"
-                    Content="Refresh" />
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                <CheckBox x:Name="AutoRefreshCheckBox"
+                          Margin="0,0,16,0"
+                          VerticalAlignment="Center"
+                          Checked="AutoRefreshCheckBox_Changed"
+                          Unchecked="AutoRefreshCheckBox_Changed"
+                          Content="Auto refresh" />
+                <Button x:Name="RefreshButton"
+                        Width="120"
+                        Height="36"
+                        Click="RefreshButton_Click"
+                        Content="Refresh" />
+            </StackPanel>
         </DockPanel>
 
-        <UniformGrid Grid.Row="2" Columns="3">
+        <UniformGrid Grid.Row="2" Columns="4">
             <Border Background="White" BorderBrush="#DCE2EA" BorderThickness="1" Padding="16" Margin="0,0,12,0">
                 <StackPanel>
                     <TextBlock Text="Total" Foreground="#526070" />
@@ -45,31 +52,121 @@
                     <TextBlock x:Name="TcpConnectionsText" Text="0" FontSize="28" FontWeight="SemiBold" />
                 </StackPanel>
             </Border>
-            <Border Background="White" BorderBrush="#DCE2EA" BorderThickness="1" Padding="16">
+            <Border Background="White" BorderBrush="#DCE2EA" BorderThickness="1" Padding="16" Margin="0,0,12,0">
                 <StackPanel>
                     <TextBlock Text="UDP" Foreground="#526070" />
                     <TextBlock x:Name="UdpConnectionsText" Text="0" FontSize="28" FontWeight="SemiBold" />
                 </StackPanel>
             </Border>
+            <Border Background="White" BorderBrush="#DCE2EA" BorderThickness="1" Padding="16">
+                <StackPanel>
+                    <TextBlock Text="Alerts" Foreground="#526070" />
+                    <TextBlock x:Name="AlertCountText" Text="0" FontSize="28" FontWeight="SemiBold" />
+                </StackPanel>
+            </Border>
         </UniformGrid>
 
-        <DataGrid x:Name="ConnectionsGrid"
-                  Grid.Row="4"
-                  AutoGenerateColumns="False"
-                  IsReadOnly="True"
-                  CanUserAddRows="False"
-                  Background="White"
-                  BorderBrush="#DCE2EA"
-                  BorderThickness="1">
-            <DataGrid.Columns>
-                <DataGridTextColumn Header="Protocol" Binding="{Binding Protocol}" Width="90" />
-                <DataGridTextColumn Header="Local" Binding="{Binding LocalEndpoint}" Width="*" />
-                <DataGridTextColumn Header="Remote" Binding="{Binding RemoteEndpoint}" Width="*" />
-                <DataGridTextColumn Header="State" Binding="{Binding State}" Width="140" />
-                <DataGridTextColumn Header="Process" Binding="{Binding ProcessName}" Width="160" />
-                <DataGridTextColumn Header="PID" Binding="{Binding ProcessId}" Width="90" />
-                <DataGridTextColumn Header="Last Seen" Binding="{Binding LastSeen}" Width="180" />
-            </DataGrid.Columns>
-        </DataGrid>
+        <TabControl Grid.Row="4">
+            <TabItem Header="Live">
+                <DataGrid x:Name="ConnectionsGrid"
+                          AutoGenerateColumns="False"
+                          IsReadOnly="True"
+                          CanUserAddRows="False"
+                          Background="White"
+                          BorderBrush="#DCE2EA"
+                          BorderThickness="1">
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="Protocol" Binding="{Binding Protocol}" Width="90" />
+                        <DataGridTextColumn Header="Local" Binding="{Binding LocalEndpoint}" Width="*" />
+                        <DataGridTextColumn Header="Remote" Binding="{Binding RemoteEndpoint}" Width="*" />
+                        <DataGridTextColumn Header="State" Binding="{Binding State}" Width="140" />
+                        <DataGridTextColumn Header="Process" Binding="{Binding ProcessName}" Width="160" />
+                        <DataGridTextColumn Header="PID" Binding="{Binding ProcessId}" Width="90" />
+                        <DataGridTextColumn Header="Last Seen" Binding="{Binding LastSeen}" Width="180" />
+                    </DataGrid.Columns>
+                </DataGrid>
+            </TabItem>
+
+            <TabItem Header="History">
+                <DockPanel>
+                    <Button DockPanel.Dock="Top" Width="140" Height="32" Margin="0,0,0,12" HorizontalAlignment="Left" Click="ReloadHistoryButton_Click" Content="Reload History" />
+                    <DataGrid x:Name="HistoryGrid" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" Background="White">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="Protocol" Binding="{Binding Protocol}" Width="90" />
+                            <DataGridTextColumn Header="Local" Binding="{Binding LocalEndpoint}" Width="*" />
+                            <DataGridTextColumn Header="Remote" Binding="{Binding RemoteEndpoint}" Width="*" />
+                            <DataGridTextColumn Header="State" Binding="{Binding State}" Width="140" />
+                            <DataGridTextColumn Header="Process" Binding="{Binding ProcessName}" Width="160" />
+                            <DataGridTextColumn Header="Last Seen" Binding="{Binding LastSeen}" Width="180" />
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </DockPanel>
+            </TabItem>
+
+            <TabItem Header="DNS Notes">
+                <DockPanel>
+                    <Grid DockPanel.Dock="Top" Margin="0,0,0,12">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="2*" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="3*" />
+                            <ColumnDefinition Width="120" />
+                        </Grid.ColumnDefinitions>
+                        <TextBox x:Name="DnsDomainTextBox" Grid.Column="0" Height="32" Margin="0,0,8,0" VerticalContentAlignment="Center" ToolTip="Domain" />
+                        <TextBox x:Name="DnsIpTextBox" Grid.Column="1" Height="32" Margin="0,0,8,0" VerticalContentAlignment="Center" ToolTip="IP address" />
+                        <TextBox x:Name="DnsNoteTextBox" Grid.Column="2" Height="32" Margin="0,0,8,0" VerticalContentAlignment="Center" ToolTip="Note" />
+                        <Button Grid.Column="3" Height="32" Click="SaveDnsNoteButton_Click" Content="Save Note" />
+                    </Grid>
+                    <DataGrid x:Name="DnsGrid" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" Background="White">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="Domain" Binding="{Binding Domain}" Width="2*" />
+                            <DataGridTextColumn Header="IP" Binding="{Binding IpAddress}" Width="*" />
+                            <DataGridTextColumn Header="Note" Binding="{Binding Note}" Width="3*" />
+                            <DataGridTextColumn Header="Last Seen" Binding="{Binding LastSeen}" Width="180" />
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </DockPanel>
+            </TabItem>
+
+            <TabItem Header="Alerts">
+                <DockPanel>
+                    <Button DockPanel.Dock="Top" Width="130" Height="32" Margin="0,0,0,12" HorizontalAlignment="Left" Click="ReloadAlertsButton_Click" Content="Reload Alerts" />
+                    <DataGrid x:Name="AlertsGrid" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" Background="White">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="Severity" Binding="{Binding Severity}" Width="110" />
+                            <DataGridTextColumn Header="Description" Binding="{Binding Description}" Width="3*" />
+                            <DataGridTextColumn Header="Process" Binding="{Binding ProcessName}" Width="160" />
+                            <DataGridTextColumn Header="Remote" Binding="{Binding RemoteEndpoint}" Width="*" />
+                            <DataGridTextColumn Header="Created" Binding="{Binding CreatedAt}" Width="180" />
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </DockPanel>
+            </TabItem>
+
+            <TabItem Header="Rules">
+                <DockPanel>
+                    <Grid DockPanel.Dock="Top" Margin="0,0,0,12">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="180" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="140" />
+                            <ColumnDefinition Width="120" />
+                        </Grid.ColumnDefinitions>
+                        <ComboBox x:Name="RuleTypeComboBox" Grid.Column="0" Height="32" Margin="0,0,8,0" />
+                        <TextBox x:Name="RuleConditionTextBox" Grid.Column="1" Height="32" Margin="0,0,8,0" VerticalContentAlignment="Center" />
+                        <ComboBox x:Name="RuleSeverityComboBox" Grid.Column="2" Height="32" Margin="0,0,8,0" />
+                        <Button Grid.Column="3" Height="32" Click="AddRuleButton_Click" Content="Add Rule" />
+                    </Grid>
+                    <DataGrid x:Name="RulesGrid" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" Background="White">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="Type" Binding="{Binding Type}" Width="190" />
+                            <DataGridTextColumn Header="Condition" Binding="{Binding Condition}" Width="*" />
+                            <DataGridTextColumn Header="Severity" Binding="{Binding Severity}" Width="120" />
+                            <DataGridCheckBoxColumn Header="Enabled" Binding="{Binding IsEnabled}" Width="90" />
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </DockPanel>
+            </TabItem>
+        </TabControl>
     </Grid>
 </Window>

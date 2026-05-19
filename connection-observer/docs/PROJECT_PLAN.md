@@ -22,7 +22,7 @@
 
 ## Phase 4: Desktop Experience
 
-- Build views for dashboard, connections, processes, DNS, history, alerts, and settings.
+- Build views for dashboard, connections, processes, DNS, history, alerts, and settings. In progress.
 - Add search/filter/export.
 - Add bandwidth charts.
 - Add geo-IP map.
