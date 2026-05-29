@@ -237,23 +237,94 @@ def render_temperature(i: int) -> np.ndarray:
 def render_electricity(i: int) -> np.ndarray:
     p = i / (FRAMES - 1)
     img, draw = base("How Electricity Actually Moves Through a Wire")
-    wire_y = 360
-    draw.line([sxy(130, wire_y), sxy(1040, wire_y)], fill=(185, 124, 68), width=26 * SCALE)
-    draw.line([sxy(130, wire_y), sxy(1040, wire_y)], fill=(245, 178, 104), width=10 * SCALE)
-    for n in range(34):
-        x = 160 + n * 25 + 12 * math.sin(p * 2 * math.pi + n)
-        draw.ellipse(bbox(x, wire_y, 5), fill=(108, 208, 255))
-    for x in range(170, 985, 120):
-        arrow(draw, (x, 285), (x + 80, 285), (255, 226, 112), 4)
-    draw.ellipse(bbox(1120, wire_y, 48), outline=(240, 240, 190), width=5 * SCALE)
-    if math.sin(p * 16 * math.pi) > -0.2:
-        draw.ellipse(bbox(1120, wire_y, 33), fill=(255, 238, 115, 170))
-    draw.text(sxy(190, 230), "electrons drift slowly", font=LABEL, fill=(108, 208, 255))
-    draw.text(sxy(525, 250), "energy moves in the field", font=LABEL, fill=(255, 226, 112))
+    left, right, top, bottom = 210, 1060, 250, 490
+    copper = (214, 134, 65)
+    bright = (255, 190, 108)
+    field = (255, 226, 112)
+    electron = (105, 210, 255)
+
+    # Complete circuit path.
+    wire = [(left, bottom), (left, top), (right, top), (right, bottom), (left, bottom)]
+    for a, b in zip(wire, wire[1:]):
+        draw.line([sxy(*a), sxy(*b)], fill=copper, width=18 * SCALE)
+        draw.line([sxy(*a), sxy(*b)], fill=bright, width=6 * SCALE)
+
+    # Battery, switch, and bulb make the circuit recognizable.
+    draw.rounded_rectangle([120 * SCALE, 338 * SCALE, 210 * SCALE, 432 * SCALE], radius=8 * SCALE, fill=(28, 42, 62), outline=(230, 238, 245), width=2 * SCALE)
+    draw.line([sxy(150, 365), sxy(150, 405)], fill=(230, 238, 245), width=5 * SCALE)
+    draw.line([sxy(180, 378), sxy(180, 392)], fill=(230, 238, 245), width=5 * SCALE)
+    draw.text(sxy(124, 315), "battery", font=SMALL, fill=(226, 235, 245))
+
+    switch_closed = p > 0.14
+    draw.line([sxy(492, top), sxy(560, top)], fill=bright, width=6 * SCALE)
+    if switch_closed:
+        draw.line([sxy(560, top), sxy(635, top)], fill=bright, width=6 * SCALE)
+    else:
+        draw.line([sxy(560, top), sxy(625, top - 42)], fill=(230, 238, 245), width=5 * SCALE)
+    draw.text(sxy(515, 204), "switch closes", font=SMALL, fill=(226, 235, 245))
+
+    draw.ellipse(bbox(right, 370, 58), outline=(240, 240, 190), width=5 * SCALE)
+    draw.line([sxy(right - 22, 370), sxy(right + 22, 370)], fill=(240, 240, 190), width=3 * SCALE)
+    lit = p > 0.34
+    if lit:
+        glow = int(120 + 70 * math.sin(p * 12 * math.pi) ** 2)
+        draw.ellipse(bbox(right, 370, 76), fill=(255, 231, 95, glow))
+        draw.ellipse(bbox(right, 370, 34), fill=(255, 244, 142, 210))
+    draw.text(sxy(1010, 455), "bulb", font=SMALL, fill=(226, 235, 245))
+
+    # Slow electron drift along the wire.
+    path_points = []
+    for x in np.linspace(left, right, 26):
+        path_points.append((x, top))
+    for y in np.linspace(top, bottom, 9):
+        path_points.append((right, y))
+    for x in np.linspace(right, left, 26):
+        path_points.append((x, bottom))
+    for y in np.linspace(bottom, top, 9):
+        path_points.append((left, y))
+    drift = p * 4.0
+    for n, (x, y) in enumerate(path_points):
+        phase = drift + n * 0.35
+        dx = 5 * math.sin(phase)
+        dy = 5 * math.cos(phase * 1.2)
+        draw.ellipse(bbox(x + dx, y + dy, 4), fill=electron)
+
+    # Fast field/energy front propagating around the whole circuit after the switch closes.
+    if p > 0.14:
+        q = min(1.0, (p - 0.14) / 0.24)
+        segments = [
+            ((560, top), (right, top)),
+            ((right, top), (right, bottom)),
+            ((right, bottom), (left, bottom)),
+            ((left, bottom), (left, top)),
+            ((left, top), (560, top)),
+        ]
+        total = [500, 240, 850, 240, 350]
+        travel = q * sum(total)
+        used = 0
+        for (a, b), length in zip(segments, total):
+            local = max(0, min(1, (travel - used) / length))
+            used += length
+            if local <= 0:
+                continue
+            sx, sy = a
+            ex, ey = b
+            x2 = sx + (ex - sx) * local
+            y2 = sy + (ey - sy) * local
+            draw.line([sxy(sx, sy), sxy(x2, y2)], fill=field, width=4 * SCALE)
+            for offset in [-28, 28]:
+                if abs(ex - sx) > abs(ey - sy):
+                    draw.line([sxy(sx, sy + offset), sxy(x2, y2 + offset)], fill=(255, 226, 112, 120), width=2 * SCALE)
+                else:
+                    draw.line([sxy(sx + offset, sy), sxy(x2 + offset, y2)], fill=(255, 226, 112, 120), width=2 * SCALE)
+        draw.text(sxy(590, 155), "field energy spreads fast around the circuit", font=LABEL, fill=field)
+
+    draw.text(sxy(245, 545), "electrons drift slowly in the metal", font=LABEL, fill=electron)
+    draw.text(sxy(245, 574), "the signal/energy is carried by the electromagnetic field", font=SMALL, fill=(226, 235, 245))
     caption(draw, progress_caption(p, [
-        "Electrons in a wire drift slowly; they do not race from switch to bulb.",
-        "The electromagnetic field around the circuit carries energy quickly.",
-        "That is why a lamp responds almost immediately when the circuit closes.",
+        "Closing the switch changes the electric field throughout the circuit.",
+        "Electrons drift slowly, but the field energy spreads around the wire quickly.",
+        "The bulb lights quickly because energy is delivered by the field, not by one electron racing across.",
     ]))
     return finish(img)
 
