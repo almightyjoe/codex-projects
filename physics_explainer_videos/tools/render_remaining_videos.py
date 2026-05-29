@@ -243,23 +243,33 @@ def render_electricity(i: int) -> np.ndarray:
     ion = (255, 154, 104)
     tungsten = (238, 220, 160)
 
-    # Complete circuit path drawn as a simplified copper ion lattice.
+    bulb_y = 352
+    # Electron-flow path through the external circuit:
+    # battery negative -> copper lattice -> switch -> filament -> battery positive.
     path = []
-    for x in np.linspace(left, right, 23):
-        path.append((float(x), float(top)))
-    for y in np.linspace(top + 24, bottom - 24, 7):
-        path.append((float(right), float(y)))
-    for x in np.linspace(right, left, 23):
+    for x in np.linspace(left, right - 45, 23):
         path.append((float(x), float(bottom)))
-    for y in np.linspace(bottom - 24, top + 24, 7):
+    for y in np.linspace(bottom - 28, bulb_y + 52, 4):
+        path.append((float(right), float(y)))
+    for t in np.linspace(0, 1, 14):
+        x = right - 30 + 60 * t
+        y = bulb_y + 10 * math.sin(t * 7 * math.pi)
+        path.append((float(x), float(y)))
+    for y in np.linspace(bulb_y - 52, top + 28, 4):
+        path.append((float(right), float(y)))
+    for x in np.linspace(right - 45, left, 23):
+        path.append((float(x), float(top)))
+    for y in np.linspace(top + 28, bottom - 28, 7):
         path.append((float(left), float(y)))
 
-    gap_ranges = [(10, 12), (27, 29), (42, 44)]
+    gap_ranges = [(9, 11), (31, 33), (48, 50)]
     def in_gap(n: int) -> bool:
         return any(start <= n <= end for start, end in gap_ranges)
 
     for idx, (x, y) in enumerate(path):
         if in_gap(idx):
+            continue
+        if 27 <= idx <= 40:
             continue
         jitter = 5 * math.sin(idx * 1.7)
         draw.ellipse(bbox(x, y + jitter, 12), fill=ion, outline=(255, 207, 172), width=SCALE)
@@ -271,32 +281,44 @@ def render_electricity(i: int) -> np.ndarray:
         draw.arc(bbox(gx, gy, 34, 22), 185, 355, fill=(98, 137, 176), width=2 * SCALE)
         draw.text(sxy(gx - 23, gy + 24), "gap", font=TINY, fill=(160, 181, 205))
 
-    # Mobile electrons hop/drift through the lattice and across small gaps.
-    shift = p * 7.5
-    for idx, (x, y) in enumerate(path):
-        if idx % 2:
-            continue
-        next_idx = (idx + 1) % len(path)
-        while in_gap(next_idx):
-            next_idx = (next_idx + 1) % len(path)
-        nx, ny = path[next_idx]
-        phase = (shift + idx * 0.13) % 1
-        ex = x + (nx - x) * phase
-        ey = y + (ny - y) * phase + 5 * math.sin(idx * 1.7)
-        draw.ellipse(bbox(ex, ey - 23, 5), fill=electron)
-        if idx % 6 == 0:
-            arrow(draw, (ex - 8, ey - 42), (ex + 18, ey - 24), electron, 2)
+    def sample_closed(points: list[tuple[float, float]], distance: float) -> tuple[float, float, float]:
+        lengths = []
+        total = 0.0
+        for a, b in zip(points, points[1:] + points[:1]):
+            seg = math.hypot(b[0] - a[0], b[1] - a[1])
+            lengths.append(seg)
+            total += seg
+        d = distance % total
+        for (a, b), seg in zip(zip(points, points[1:] + points[:1]), lengths):
+            if d <= seg:
+                t = 0 if seg == 0 else d / seg
+                x = a[0] + (b[0] - a[0]) * t
+                y = a[1] + (b[1] - a[1]) * t
+                return x, y, math.atan2(b[1] - a[1], b[0] - a[0])
+            d -= seg
+        return points[-1][0], points[-1][1], 0.0
+
+    total_len = sum(math.hypot(b[0] - a[0], b[1] - a[1]) for a, b in zip(path, path[1:] + path[:1]))
+    electron_count = 34
+    for n in range(electron_count):
+        dist = p * total_len * 0.9 + n * total_len / electron_count
+        ex, ey, ang = sample_closed(path, dist)
+        offset = -22 if not (right - 50 < ex < right + 50 and bulb_y - 45 < ey < bulb_y + 45) else 0
+        draw.ellipse(bbox(ex, ey + offset, 5), fill=electron)
+        if n % 7 == 0:
+            arrow(draw, (ex - 16 * math.cos(ang), ey + offset - 16 * math.sin(ang)), (ex + 16 * math.cos(ang), ey + offset + 16 * math.sin(ang)), electron, 2)
 
     # Battery, switch, and bulb make the circuit recognizable.
     draw.rounded_rectangle([95 * SCALE, 303 * SCALE, 185 * SCALE, 397 * SCALE], radius=8 * SCALE, fill=(28, 42, 62), outline=(230, 238, 245), width=2 * SCALE)
     draw.line([sxy(125, 330), sxy(125, 370)], fill=(230, 238, 245), width=5 * SCALE)
     draw.line([sxy(155, 343), sxy(155, 357)], fill=(230, 238, 245), width=5 * SCALE)
-    draw.text(sxy(95, 280), "battery sets up field", font=SMALL, fill=(226, 235, 245))
+    draw.text(sxy(114, 321), "+", font=LABEL, fill=(255, 178, 104))
+    draw.text(sxy(112, 380), "-", font=LABEL, fill=electron)
+    draw.text(sxy(95, 280), "battery chemistry", font=SMALL, fill=(226, 235, 245))
 
     switch_closed = p > 0.14
     draw.text(sxy(505, 160), "closed circuit", font=SMALL, fill=(226, 235, 245))
 
-    bulb_y = 352
     draw.ellipse(bbox(right, bulb_y, 58), outline=(240, 240, 190), width=5 * SCALE)
     # Filament: the high-resistance part where energy becomes heat/light.
     filament = []
@@ -319,11 +341,11 @@ def render_electricity(i: int) -> np.ndarray:
     draw.text(sxy(385, 520), "electron flow (-)", font=LABEL, fill=electron)
     arrow(draw, (820, 545), (630, 545), (255, 178, 104), 4)
     draw.text(sxy(635, 520), "conventional current (+)", font=LABEL, fill=(255, 178, 104))
-    draw.text(sxy(230, 582), "Cu+ atoms stay fixed; mobile electrons hop site to site", font=LABEL, fill=(238, 245, 255))
+    draw.text(sxy(230, 582), "Cu+ ions stay fixed; mobile electrons hop site to site", font=LABEL, fill=(238, 245, 255))
     draw.text(sxy(805, 582), "filament: collisions become heat/light or motor work", font=SMALL, fill=(255, 206, 144))
     caption(draw, progress_caption(p, [
         "The battery bias makes mobile electrons hop from site to site through the metal.",
-        "The copper atoms stay mostly fixed; the mobile electrons carry the charge pattern across gaps.",
+        "The copper ions stay mostly fixed; the mobile electrons carry the charge pattern across gaps.",
         "In a filament or motor, collisions and resistance turn that electrical energy into heat, light, or motion.",
     ]))
     return finish(img)
