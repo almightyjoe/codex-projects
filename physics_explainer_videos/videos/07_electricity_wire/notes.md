@@ -11,7 +11,8 @@
 - In the outside circuit, electron flow goes from the negative terminal through the wire, switch, filament/device, and back to the positive terminal.
 - Conventional current is shown in the opposite direction.
 - Positive copper ions remain mostly fixed in the metal lattice.
-- Mobile electrons drift/hop from lattice site to lattice site.
+- Most copper lattice sites are shown with nearby mobile electrons.
+- A few open electron spots move around the circuit as neighboring electrons fill them in sequence.
 - In the tungsten filament, resistance and collisions turn electrical energy into heat and light.
 
 ## Style

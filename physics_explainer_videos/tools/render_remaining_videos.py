@@ -270,24 +270,14 @@ def render_electricity(i: int) -> np.ndarray:
         + [(left, top), pos_terminal, (135.0, 330.0), (135.0, 385.0), neg_terminal]
     )
 
-    gap_ranges = [(9, 11), (45, 47), (58, 60)]
-    def in_gap(n: int) -> bool:
-        return any(start <= n <= end for start, end in gap_ranges)
-
+    conductor_sites = []
     for idx, (x, y) in enumerate(external_path):
-        if in_gap(idx):
-            continue
         if filament_start <= idx <= filament_end:
             continue
         jitter = 5 * math.sin(idx * 1.7)
+        conductor_sites.append((idx, x, y + jitter))
         draw.ellipse(bbox(x, y + jitter, 12), fill=ion, outline=(255, 207, 172), width=SCALE)
         centered(draw, (x, y + jitter), "Cu+", TINY, (60, 22, 12))
-
-    for start, end in gap_ranges:
-        gx = sum(external_path[n][0] for n in range(start, end + 1)) / (end - start + 1)
-        gy = sum(external_path[n][1] for n in range(start, end + 1)) / (end - start + 1)
-        draw.arc(bbox(gx, gy, 34, 22), 185, 355, fill=(98, 137, 176), width=2 * SCALE)
-        draw.text(sxy(gx - 23, gy + 24), "gap", font=TINY, fill=(160, 181, 205))
 
     def sample_closed(points: list[tuple[float, float]], distance: float) -> tuple[float, float, float]:
         lengths = []
@@ -306,18 +296,37 @@ def render_electricity(i: int) -> np.ndarray:
             d -= seg
         return points[-1][0], points[-1][1], 0.0
 
+    site_count = len(conductor_sites)
+    hole_phase = p * site_count * 0.85
+    holes = [int((hole_phase + offset) % site_count) for offset in (6, site_count * 0.42, site_count * 0.72)]
+    filling = {((hole - 1) % site_count): hole for hole in holes}
+
+    for site_idx, (_, x, y) in enumerate(conductor_sites):
+        if site_idx in holes:
+            draw.ellipse(bbox(x, y - 25, 9), outline=(255, 226, 112), width=2 * SCALE)
+            centered(draw, (x, y - 25), "open", TINY, (255, 226, 112))
+            continue
+        if site_idx in filling:
+            continue
+        draw.ellipse(bbox(x, y - 25, 5), fill=electron)
+
+    hop_t = hole_phase % 1
+    for source_idx, target_idx in filling.items():
+        _, sx, sy = conductor_sites[source_idx]
+        _, tx, ty = conductor_sites[target_idx]
+        ex = sx + (tx - sx) * hop_t
+        ey = (sy - 25) + ((ty - 25) - (sy - 25)) * hop_t
+        draw.ellipse(bbox(ex, ey, 8), fill=electron, outline=(213, 245, 255), width=SCALE)
+        arrow(draw, (sx, sy - 43), (tx, ty - 43), electron, 2)
+
+    # Electrons also pass through the high-resistance filament section.
     total_len = sum(math.hypot(b[0] - a[0], b[1] - a[1]) for a, b in zip(path, path[1:] + path[:1]))
-    electron_count = 13
-    for n in range(electron_count):
-        dist = p * total_len * 1.45 + n * total_len / electron_count
+    for n in range(5):
+        dist = p * total_len * 1.2 + n * 42
         ex, ey, ang = sample_closed(path, dist)
-        offset = -20 if not (right - 55 < ex < right + 55 and bulb_y - 48 < ey < bulb_y + 48) else 0
-        for tail in range(3, 0, -1):
-            tx, ty, _ = sample_closed(path, dist - tail * 18)
-            tail_offset = -20 if not (right - 55 < tx < right + 55 and bulb_y - 48 < ty < bulb_y + 48) else 0
-            draw.ellipse(bbox(tx, ty + tail_offset, 3 + tail), fill=(105, 210, 255, 55 + tail * 38))
-        draw.ellipse(bbox(ex, ey + offset, 8), fill=electron, outline=(213, 245, 255), width=SCALE)
-        arrow(draw, (ex - 18 * math.cos(ang), ey + offset - 18 * math.sin(ang)), (ex + 19 * math.cos(ang), ey + offset + 19 * math.sin(ang)), electron, 2)
+        if right - 55 < ex < right + 55 and bulb_y - 48 < ey < bulb_y + 48:
+            draw.ellipse(bbox(ex, ey, 7), fill=electron, outline=(213, 245, 255), width=SCALE)
+            arrow(draw, (ex - 15 * math.cos(ang), ey - 15 * math.sin(ang)), (ex + 16 * math.cos(ang), ey + 16 * math.sin(ang)), electron, 2)
 
     # Battery, switch, and bulb make the circuit recognizable.
     draw.rounded_rectangle([95 * SCALE, 303 * SCALE, 185 * SCALE, 397 * SCALE], radius=8 * SCALE, fill=(28, 42, 62), outline=(230, 238, 245), width=2 * SCALE)
@@ -355,11 +364,11 @@ def render_electricity(i: int) -> np.ndarray:
     draw.text(sxy(385, 520), "electron flow (-)", font=LABEL, fill=electron)
     arrow(draw, (820, 545), (630, 545), (255, 178, 104), 4)
     draw.text(sxy(635, 520), "conventional current (+)", font=LABEL, fill=(255, 178, 104))
-    draw.text(sxy(230, 582), "Cu+ ions stay fixed; mobile electrons hop site to site", font=LABEL, fill=(238, 245, 255))
-    draw.text(sxy(805, 582), "filament: collisions become heat/light or motor work", font=SMALL, fill=(255, 206, 144))
+    draw.text(sxy(230, 582), "Cu+ ions fixed; open spots get filled in sequence", font=LABEL, fill=(238, 245, 255))
+    draw.text(sxy(840, 582), "filament: collisions become heat/light", font=SMALL, fill=(255, 206, 144))
     caption(draw, progress_caption(p, [
-        "The battery bias makes mobile electrons hop from site to site through the metal.",
-        "The copper ions stay mostly fixed; the mobile electrons carry the charge pattern across gaps.",
+        "The battery creates a few open electron spots, then neighboring electrons fill them in sequence.",
+        "The copper ions stay mostly fixed; the mobile electrons make a continuous train around the circuit.",
         "In a filament or motor, collisions and resistance turn that electrical energy into heat, light, or motion.",
     ]))
     return finish(img)
