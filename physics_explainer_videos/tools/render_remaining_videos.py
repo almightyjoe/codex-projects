@@ -237,35 +237,56 @@ def render_temperature(i: int) -> np.ndarray:
 def render_electricity(i: int) -> np.ndarray:
     p = i / (FRAMES - 1)
     img, draw = base("How Electricity Actually Moves Through a Wire")
-    left, right, top, bottom = 185, 1060, 225, 430
-    copper = (214, 134, 65)
-    bright = (255, 190, 108)
+    left, right, top, bottom = 205, 1030, 225, 480
     field = (255, 226, 112)
     electron = (105, 210, 255)
     ion = (255, 154, 104)
     tungsten = (238, 220, 160)
 
-    # Complete circuit path.
-    wire = [(left, bottom), (left, top), (right, top), (right, bottom), (left, bottom)]
-    for a, b in zip(wire, wire[1:]):
-        draw.line([sxy(*a), sxy(*b)], fill=copper, width=18 * SCALE)
-        draw.line([sxy(*a), sxy(*b)], fill=bright, width=6 * SCALE)
+    # Complete circuit path drawn as a simplified copper ion lattice.
+    path = []
+    for x in np.linspace(left, right, 23):
+        path.append((float(x), float(top)))
+    for y in np.linspace(top + 24, bottom - 24, 7):
+        path.append((float(right), float(y)))
+    for x in np.linspace(right, left, 23):
+        path.append((float(x), float(bottom)))
+    for y in np.linspace(bottom - 24, top + 24, 7):
+        path.append((float(left), float(y)))
+
+    for idx, (x, y) in enumerate(path):
+        jitter = 5 * math.sin(idx * 1.7)
+        draw.ellipse(bbox(x, y + jitter, 12), fill=ion, outline=(255, 207, 172), width=SCALE)
+        centered(draw, (x, y + jitter), "Cu+", TINY, (60, 22, 12))
+
+    # Mobile electrons hop/drift through the lattice. This is a visual model of drift, not ion motion.
+    shift = p * 7.5
+    for idx, (x, y) in enumerate(path):
+        if idx % 2:
+            continue
+        nx, ny = path[(idx + 1) % len(path)]
+        phase = (shift + idx * 0.13) % 1
+        ex = x + (nx - x) * phase
+        ey = y + (ny - y) * phase + 5 * math.sin(idx * 1.7)
+        draw.ellipse(bbox(ex, ey - 23, 5), fill=electron)
+        if idx % 6 == 0:
+            arrow(draw, (ex - 8, ey - 42), (ex + 18, ey - 24), electron, 2)
 
     # Battery, switch, and bulb make the circuit recognizable.
     draw.rounded_rectangle([95 * SCALE, 303 * SCALE, 185 * SCALE, 397 * SCALE], radius=8 * SCALE, fill=(28, 42, 62), outline=(230, 238, 245), width=2 * SCALE)
     draw.line([sxy(125, 330), sxy(125, 370)], fill=(230, 238, 245), width=5 * SCALE)
     draw.line([sxy(155, 343), sxy(155, 357)], fill=(230, 238, 245), width=5 * SCALE)
-    draw.text(sxy(102, 280), "battery pushes charge", font=SMALL, fill=(226, 235, 245))
+    draw.text(sxy(95, 280), "battery sets up field", font=SMALL, fill=(226, 235, 245))
 
     switch_closed = p > 0.14
-    draw.line([sxy(492, top), sxy(560, top)], fill=bright, width=6 * SCALE)
+    draw.line([sxy(492, top - 33), sxy(560, top - 33)], fill=(230, 238, 245), width=4 * SCALE)
     if switch_closed:
-        draw.line([sxy(560, top), sxy(635, top)], fill=bright, width=6 * SCALE)
+        draw.line([sxy(560, top - 33), sxy(635, top - 33)], fill=(230, 238, 245), width=4 * SCALE)
     else:
-        draw.line([sxy(560, top), sxy(625, top - 42)], fill=(230, 238, 245), width=5 * SCALE)
-    draw.text(sxy(515, 181), "switch closes", font=SMALL, fill=(226, 235, 245))
+        draw.line([sxy(560, top - 33), sxy(625, top - 75)], fill=(230, 238, 245), width=4 * SCALE)
+    draw.text(sxy(515, 160), "switch closes", font=SMALL, fill=(226, 235, 245))
 
-    bulb_y = 328
+    bulb_y = 352
     draw.ellipse(bbox(right, bulb_y, 58), outline=(240, 240, 190), width=5 * SCALE)
     # Filament: the high-resistance part where energy becomes heat/light.
     filament = []
@@ -279,34 +300,17 @@ def render_electricity(i: int) -> np.ndarray:
         glow = int(120 + 70 * math.sin(p * 12 * math.pi) ** 2)
         draw.ellipse(bbox(right, bulb_y, 76), fill=(255, 231, 95, glow))
         draw.line(filament, fill=(255, 246, 143), width=5 * SCALE)
-    draw.text(sxy(1000, 405), "tungsten filament", font=SMALL, fill=(226, 235, 245))
-
-    # Slow electron drift along the wire.
-    path_points = []
-    for x in np.linspace(left, right, 26):
-        path_points.append((x, top))
-    for y in np.linspace(top, bottom, 9):
-        path_points.append((right, y))
-    for x in np.linspace(right, left, 26):
-        path_points.append((x, bottom))
-    for y in np.linspace(bottom, top, 9):
-        path_points.append((left, y))
-    drift = p * 4.0
-    for n, (x, y) in enumerate(path_points):
-        phase = drift + n * 0.35
-        dx = 5 * math.sin(phase)
-        dy = 5 * math.cos(phase * 1.2)
-        draw.ellipse(bbox(x + dx, y + dy, 4), fill=electron)
+    draw.text(sxy(982, 435), "tungsten filament", font=SMALL, fill=(226, 235, 245))
 
     # Fast field/energy front propagating around the whole circuit after the switch closes.
     if p > 0.14:
         q = min(1.0, (p - 0.14) / 0.24)
         segments = [
-            ((560, top), (right, top)),
+            ((560, top - 38), (right, top - 38)),
             ((right, top), (right, bottom)),
             ((right, bottom), (left, bottom)),
             ((left, bottom), (left, top)),
-            ((left, top), (560, top)),
+            ((left, top), (560, top - 38)),
         ]
         total = [500, 240, 850, 240, 350]
         travel = q * sum(total)
@@ -328,45 +332,12 @@ def render_electricity(i: int) -> np.ndarray:
                     draw.line([sxy(sx + offset, sy), sxy(x2 + offset, y2)], fill=(255, 226, 112, 120), width=2 * SCALE)
         draw.text(sxy(585, 135), "field sets up the push", font=LABEL, fill=field)
 
-    # Microscopic view of the wire and filament.
-    zoom = [80 * SCALE, 485 * SCALE, 1200 * SCALE, 610 * SCALE]
-    draw.rounded_rectangle(zoom, radius=10 * SCALE, fill=(14, 27, 45), outline=(62, 90, 120), width=2 * SCALE)
-    draw.text(sxy(105, 500), "inside the metal", font=LABEL, fill=(238, 245, 255))
-    draw.text(sxy(105, 528), "Cu+ ions stay fixed; mobile electrons drift through the lattice", font=SMALL, fill=(206, 221, 237))
-
-    lattice_y = 580
-    xs = list(range(370, 860, 42))
-    for idx, x in enumerate(xs):
-        y = lattice_y + (idx % 2) * 14
-        draw.ellipse(bbox(x, y, 13), fill=ion, outline=(255, 207, 172), width=SCALE)
-        centered(draw, (x, y), "Cu+", TINY, (60, 22, 12))
-        next_x = x + 22 + 18 * ((p * 3 + idx * 0.07) % 1)
-        draw.ellipse(bbox(next_x, y - 22, 5), fill=electron)
-    for idx in range(len(xs) - 1):
-        x1 = xs[idx] + 15
-        x2 = xs[idx + 1] - 15
-        y1 = lattice_y + (idx % 2) * 14 - 22
-        y2 = lattice_y + ((idx + 1) % 2) * 14 - 22
-        arrow(draw, (x1, y1), (x2, y2), electron, 2)
-
-    arrow(draw, (410, 545), (555, 545), electron, 3)
-    draw.text(sxy(420, 520), "electron flow (-)", font=SMALL, fill=electron)
-    arrow(draw, (725, 545), (580, 545), (255, 178, 104), 3)
-    draw.text(sxy(610, 520), "conventional current (+)", font=SMALL, fill=(255, 178, 104))
-
-    filament_x = 965
-    draw.text(sxy(910, 500), "filament/device", font=LABEL, fill=tungsten)
-    for n in range(7):
-        x = filament_x + n * 24
-        y = 555 + 18 * math.sin(n + p * 9)
-        draw.ellipse(bbox(x, y, 10), fill=tungsten, outline=(255, 244, 190), width=SCALE)
-        if lit:
-            draw.line([sxy(x - 11, y - 19), sxy(x + 11, y - 31)], fill=(255, 117, 80), width=2 * SCALE)
-            draw.line([sxy(x + 13, y + 17), sxy(x + 27, y + 25)], fill=(255, 117, 80), width=2 * SCALE)
-    draw.text(sxy(900, 590), "more collisions = heat/light or motor work", font=SMALL, fill=(255, 206, 144))
-
-    draw.text(sxy(230, 456), "electron drift is slow", font=LABEL, fill=electron)
-    draw.text(sxy(230, 478), "the electric field push appears around the circuit quickly", font=SMALL, fill=(226, 235, 245))
+    arrow(draw, (370, 545), (560, 545), electron, 4)
+    draw.text(sxy(385, 520), "electron flow (-)", font=LABEL, fill=electron)
+    arrow(draw, (820, 545), (630, 545), (255, 178, 104), 4)
+    draw.text(sxy(635, 520), "conventional current (+)", font=LABEL, fill=(255, 178, 104))
+    draw.text(sxy(230, 585), "Cu+ ions stay fixed; mobile electrons drift/hop through the lattice", font=LABEL, fill=(238, 245, 255))
+    draw.text(sxy(805, 585), "filament resistance: collisions become heat/light or motor work", font=SMALL, fill=(255, 206, 144))
     caption(draw, progress_caption(p, [
         "The battery sets up an electric field that pushes mobile electrons through the metal.",
         "In the wire, electrons drift through a lattice of positive copper ions.",
