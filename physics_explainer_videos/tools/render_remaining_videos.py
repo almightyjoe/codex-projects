@@ -244,40 +244,48 @@ def render_electricity(i: int) -> np.ndarray:
     tungsten = (238, 220, 160)
 
     bulb_y = 352
-    # Electron-flow path through the external circuit:
-    # battery negative -> copper lattice -> switch -> filament -> battery positive.
-    path = []
+    neg_terminal = (185.0, 385.0)
+    pos_terminal = (185.0, 330.0)
+    # Electron-flow path through the full loop:
+    # battery negative -> copper lattice -> filament -> battery positive -> battery chemistry -> negative.
+    external_path = []
     for x in np.linspace(left, right - 45, 23):
-        path.append((float(x), float(bottom)))
+        external_path.append((float(x), float(bottom)))
     for y in np.linspace(bottom - 28, bulb_y + 52, 4):
-        path.append((float(right), float(y)))
+        external_path.append((float(right), float(y)))
+    filament_start = len(external_path)
     for t in np.linspace(0, 1, 14):
         x = right - 30 + 60 * t
         y = bulb_y + 10 * math.sin(t * 7 * math.pi)
-        path.append((float(x), float(y)))
+        external_path.append((float(x), float(y)))
+    filament_end = len(external_path) - 1
     for y in np.linspace(bulb_y - 52, top + 28, 4):
-        path.append((float(right), float(y)))
+        external_path.append((float(right), float(y)))
     for x in np.linspace(right - 45, left, 23):
-        path.append((float(x), float(top)))
-    for y in np.linspace(top + 28, bottom - 28, 7):
-        path.append((float(left), float(y)))
+        external_path.append((float(x), float(top)))
 
-    gap_ranges = [(9, 11), (31, 33), (48, 50)]
+    path = (
+        [neg_terminal, (left, bottom)]
+        + external_path
+        + [(left, top), pos_terminal, (135.0, 330.0), (135.0, 385.0), neg_terminal]
+    )
+
+    gap_ranges = [(9, 11), (45, 47), (58, 60)]
     def in_gap(n: int) -> bool:
         return any(start <= n <= end for start, end in gap_ranges)
 
-    for idx, (x, y) in enumerate(path):
+    for idx, (x, y) in enumerate(external_path):
         if in_gap(idx):
             continue
-        if 27 <= idx <= 40:
+        if filament_start <= idx <= filament_end:
             continue
         jitter = 5 * math.sin(idx * 1.7)
         draw.ellipse(bbox(x, y + jitter, 12), fill=ion, outline=(255, 207, 172), width=SCALE)
         centered(draw, (x, y + jitter), "Cu+", TINY, (60, 22, 12))
 
     for start, end in gap_ranges:
-        gx = sum(path[n][0] for n in range(start, end + 1)) / (end - start + 1)
-        gy = sum(path[n][1] for n in range(start, end + 1)) / (end - start + 1)
+        gx = sum(external_path[n][0] for n in range(start, end + 1)) / (end - start + 1)
+        gy = sum(external_path[n][1] for n in range(start, end + 1)) / (end - start + 1)
         draw.arc(bbox(gx, gy, 34, 22), 185, 355, fill=(98, 137, 176), width=2 * SCALE)
         draw.text(sxy(gx - 23, gy + 24), "gap", font=TINY, fill=(160, 181, 205))
 
@@ -299,14 +307,17 @@ def render_electricity(i: int) -> np.ndarray:
         return points[-1][0], points[-1][1], 0.0
 
     total_len = sum(math.hypot(b[0] - a[0], b[1] - a[1]) for a, b in zip(path, path[1:] + path[:1]))
-    electron_count = 34
+    electron_count = 13
     for n in range(electron_count):
-        dist = p * total_len * 0.9 + n * total_len / electron_count
+        dist = p * total_len * 1.45 + n * total_len / electron_count
         ex, ey, ang = sample_closed(path, dist)
-        offset = -22 if not (right - 50 < ex < right + 50 and bulb_y - 45 < ey < bulb_y + 45) else 0
-        draw.ellipse(bbox(ex, ey + offset, 5), fill=electron)
-        if n % 7 == 0:
-            arrow(draw, (ex - 16 * math.cos(ang), ey + offset - 16 * math.sin(ang)), (ex + 16 * math.cos(ang), ey + offset + 16 * math.sin(ang)), electron, 2)
+        offset = -20 if not (right - 55 < ex < right + 55 and bulb_y - 48 < ey < bulb_y + 48) else 0
+        for tail in range(3, 0, -1):
+            tx, ty, _ = sample_closed(path, dist - tail * 18)
+            tail_offset = -20 if not (right - 55 < tx < right + 55 and bulb_y - 48 < ty < bulb_y + 48) else 0
+            draw.ellipse(bbox(tx, ty + tail_offset, 3 + tail), fill=(105, 210, 255, 55 + tail * 38))
+        draw.ellipse(bbox(ex, ey + offset, 8), fill=electron, outline=(213, 245, 255), width=SCALE)
+        arrow(draw, (ex - 18 * math.cos(ang), ey + offset - 18 * math.sin(ang)), (ex + 19 * math.cos(ang), ey + offset + 19 * math.sin(ang)), electron, 2)
 
     # Battery, switch, and bulb make the circuit recognizable.
     draw.rounded_rectangle([95 * SCALE, 303 * SCALE, 185 * SCALE, 397 * SCALE], radius=8 * SCALE, fill=(28, 42, 62), outline=(230, 238, 245), width=2 * SCALE)
@@ -315,6 +326,9 @@ def render_electricity(i: int) -> np.ndarray:
     draw.text(sxy(114, 321), "+", font=LABEL, fill=(255, 178, 104))
     draw.text(sxy(112, 380), "-", font=LABEL, fill=electron)
     draw.text(sxy(95, 280), "battery chemistry", font=SMALL, fill=(226, 235, 245))
+    draw.line([sxy(135, 330), sxy(135, 385)], fill=(255, 226, 112), width=2 * SCALE)
+    arrow(draw, (135, 340), (135, 378), (255, 226, 112), 2)
+    draw.text(sxy(86, 408), "chemistry returns charge", font=TINY, fill=(255, 226, 112))
 
     switch_closed = p > 0.14
     draw.text(sxy(505, 160), "closed circuit", font=SMALL, fill=(226, 235, 245))
