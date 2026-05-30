@@ -13,6 +13,7 @@
 - Positive copper ions remain mostly fixed in the metal lattice.
 - Most copper lattice sites are shown with nearby mobile electrons.
 - A few open electron spots move around the circuit as neighboring electrons fill them in sequence.
+- The lamp filament stays visible; it warms in color without a glow overlay hiding electron motion.
 - In the tungsten filament, resistance and collisions turn electrical energy into heat and light.
 
 ## Style

@@ -298,7 +298,10 @@ def render_electricity(i: int) -> np.ndarray:
 
     site_count = len(conductor_sites)
     hole_phase = p * site_count * 0.85
-    holes = [int((hole_phase + offset) % site_count) for offset in (6, site_count * 0.42, site_count * 0.72)]
+    holes = [
+        int((hole_phase + offset) % site_count)
+        for offset in (4, site_count * 0.18, site_count * 0.36, site_count * 0.54, site_count * 0.72, site_count * 0.88)
+    ]
     filling = {((hole - 1) % site_count): hole for hole in holes}
 
     for site_idx, (_, x, y) in enumerate(conductor_sites):
@@ -321,10 +324,13 @@ def render_electricity(i: int) -> np.ndarray:
 
     # Electrons also pass through the high-resistance filament section.
     total_len = sum(math.hypot(b[0] - a[0], b[1] - a[1]) for a, b in zip(path, path[1:] + path[:1]))
-    for n in range(5):
-        dist = p * total_len * 1.2 + n * 42
+    for n in range(14):
+        dist = p * total_len * 1.75 + n * 24
         ex, ey, ang = sample_closed(path, dist)
         if right - 55 < ex < right + 55 and bulb_y - 48 < ey < bulb_y + 48:
+            wobble = 5 * math.sin(p * 18 * math.pi + n * 1.4)
+            ex += wobble * math.cos(ang + math.pi / 2)
+            ey += wobble * math.sin(ang + math.pi / 2)
             draw.ellipse(bbox(ex, ey, 7), fill=electron, outline=(213, 245, 255), width=SCALE)
             arrow(draw, (ex - 15 * math.cos(ang), ey - 15 * math.sin(ang)), (ex + 16 * math.cos(ang), ey + 16 * math.sin(ang)), electron, 2)
 
@@ -350,11 +356,8 @@ def render_electricity(i: int) -> np.ndarray:
         y = bulb_y + 10 * math.sin(t * 7 * math.pi)
         filament.append(sxy(x, y))
     draw.line(filament, fill=tungsten, width=4 * SCALE)
-    lit = p > 0.34
-    if lit:
-        glow = int(120 + 70 * math.sin(p * 12 * math.pi) ** 2)
-        draw.ellipse(bbox(right, bulb_y, 76), fill=(255, 231, 95, glow))
-        draw.line(filament, fill=(255, 246, 143), width=5 * SCALE)
+    if p > 0.34:
+        draw.line(filament, fill=(255, 196, 105), width=5 * SCALE)
     draw.text(sxy(982, 435), "tungsten filament", font=SMALL, fill=(226, 235, 245))
 
     if p > 0.14:
